@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 
+ * 全局样式 
+ */
+
+/* 自定义颜色变量 */
+:root {
+  --reader-bg: #f5f5f7;
+  --reader-text: #333333;
+  --reader-muted: #8a8a8a;
+  --reader-font-size: 18px; /* Default font size */
+  --reader-highlight: rgba(243, 112, 33, 0.2); /* Hermès Orange light */
+  --reader-highlight-hover: rgba(243, 112, 33, 0.15);
+}
+
+/* 暗色模式变量 (手动触发) */
+:root.dark {
+  --reader-bg: #1c1c1e; /* Apple Dark */
+  --reader-text: #b0b0b0; /* Softer text */
+  --reader-muted: #6b7280;
+  --reader-highlight: rgba(243, 112, 33, 0.3);
+  --reader-highlight-hover: rgba(243, 112, 33, 0.25);
+}
+
+/* 基础样式 */
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  background-color: var(--reader-bg);
+  transition: background-color 0.3s ease;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--reader-text);
+  background-color: var(--reader-bg);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 阅读器背景 */
+.reader-bg {
+  background-color: var(--reader-bg);
+}
+
+/* 阅读器容器 */
+.reader-container {
+  font-family: inherit;
+  font-size: var(--reader-font-size);
+  line-height: 1.8;
+  color: var(--reader-text);
+  letter-spacing: 0.02em;
+}
+
+/* 高亮句子 */
+.highlight-sentence {
+  background-color: var(--reader-highlight);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--reader-highlight-hover);
+  transition: background-color 0.2s ease;
+}
+
+/* 普通段落文本 */
+.segment-text {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.segment-text:hover {
+  background-color: var(--reader-highlight-hover);
+}
+
+/* 播放器按钮 */
+.player-btn {
+  @apply p-2 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors;
+}
+
+.player-btn-primary {
+  @apply w-14 h-14 rounded-full bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-500/30 transition-all;
+}
+
+/* 选择文本颜色 */
+::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: inherit;
+}
+
+/* 隐藏滚动条但保持功能 */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 触摸优化 */
+@media (hover: none) {
+  .segment-text:hover {
+    background-color: transparent;
+  }
+  
+  .segment-text:active {
+    background-color: var(--reader-highlight-hover);
+  }
+}
+
+/* 响应式字体大小 */
+@media (max-width: 768px) {
+  .reader-container {
+    /* 移除固定字体大小，使用变量控制 */
+    line-height: 1.85;
+  }
+}
+
+@media (max-width: 480px) {
+  .reader-container {
+    /* 移除固定字体大小 */
+    line-height: 1.8;
+  }
+}
+
+/* 安全区域 */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-area-inset-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* 动画 */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 禁用 iOS 元素自动放大 */
+input, select, textarea {
+  font-size: 16px;
+}

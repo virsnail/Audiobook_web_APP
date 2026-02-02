@@ -1,0 +1,25 @@
+{
+  "chapters": [
+    {
+      "id": "ch001",
+      "duration": 112.15
+    },
+    {
+      "id": "ch002",
+      "duration": 107.98
+    },
+    {
+      "id": "ch003",
+      "duration": 197.64
+    },
+    {
+      "id": "ch004",
+      "duration": 834.87
+    },
+    {
+      "id": "ch005",
+      "duration": 1497.57
+    }
+  ],
+  "totalDuration": 2750.21
+}

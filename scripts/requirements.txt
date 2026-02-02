@@ -1,0 +1,10 @@
+# 音频对齐工具 (使用 MLX 加速)
+stable-ts==2.19.1
+mlx-whisper>=0.4.0
+
+# 音频处理
+pydub==0.25.1
+ffmpeg-python==0.2.0
+
+# 文件处理
+tqdm==4.67.1
