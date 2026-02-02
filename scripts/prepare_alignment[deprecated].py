@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-音频-文本对齐数据准备脚本 in Macbook M2
+音频-文本对齐数据准备脚本 in Macbook M2【本脚本这种方式不可能成功，已经废弃】
+建议使用 微软等公司的 tts API 准备音频-文本对齐数据。也可以使用 edge-tts
 
 使用 stable-ts (MLX) 生成音频和文本的对齐数据
 支持批量处理 00001.mp3 ~ 99999.mp3 格式的文件
