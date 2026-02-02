@@ -1,0 +1,68 @@
+version: "3.9"
+
+# ============================================================
+# AudioBook Reader - 开发环境 Docker Compose 配置
+# ============================================================
+# 端口分配：
+#   - PostgreSQL: 5433 (外部) -> 5432 (容器内)
+#   - FastAPI 后端: 8001 (外部) -> 8000 (容器内)
+#   - SvelteKit 前端: 5173 (本地 pnpm dev)
+# ============================================================
+
+services:
+  # PostgreSQL 数据库
+  db:
+    image: postgres:17-alpine
+    container_name: audiobook_db_dev
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: audiobook
+      POSTGRES_PASSWORD: devpassword123
+      POSTGRES_DB: audiobook
+      TZ: Asia/Shanghai
+    volumes:
+      - audiobook_pgdata_dev:/var/lib/postgresql/data
+    networks:
+      - audiobook_dev_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audiobook -d audiobook"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI 后端服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: audiobook_backend_dev
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://audiobook:devpassword123@db:5432/audiobook
+      - SECRET_KEY=dev-secret-key-not-for-production-use-only
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:4173
+      - MEDIA_PATH=/app/media
+      - DEBUG=true
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./backend/app:/app/app
+      - ./media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - audiobook_dev_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  audiobook_dev_network:
+    name: audiobook_dev_network
+    driver: bridge
+
+volumes:
+  audiobook_pgdata_dev:
+    name: audiobook_pgdata_dev
