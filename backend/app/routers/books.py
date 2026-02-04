@@ -8,7 +8,7 @@ import re
 from typing import Optional, List
 from mutagen.mp3 import MP3
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -375,6 +375,7 @@ async def get_manifest(
 async def get_chapter_audio(
     book_id: uuid.UUID,
     chapter_id: str,
+    request: Request,  # 添加 Request 参数以访问 headers
     current_user: User = Depends(get_current_user_token_or_query),
     db: AsyncSession = Depends(get_db)
 ):
@@ -398,10 +399,67 @@ async def get_chapter_audio(
             detail="章节音频不存在"
         )
     
+    
+    # 关键修复：支持 HTTP Range requests，允许浏览器 seek 到任意位置
+    from fastapi.responses import StreamingResponse
+    import re
+    
+    # 获取文件大小
+    file_stat = os.stat(audio_path)
+    file_size = file_stat.st_size
+    
+    # 从请求头中解析 Range
+    range_header = request.headers.get("Range")
+    
+    if range_header:
+        # 解析 Range 头：bytes=start-end
+        import re
+        match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else file_size - 1
+            
+            # 确保范围有效
+            if start >= file_size:
+                raise HTTPException(
+                    status_code=416,  # Range Not Satisfiable
+                    detail="Range not satisfiable"
+                )
+            
+            end = min(end, file_size - 1)
+            length = end - start + 1
+            
+            # 读取文件的指定范围
+            def file_iterator(file_path: str, start: int, length: int, chunk_size=8192):
+                with open(file_path, 'rb') as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(chunk_size, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        yield chunk
+            
+            headers = {
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(length),
+                "Content-Type": "audio/mpeg",
+            }
+            
+            return StreamingResponse(
+                file_iterator(audio_path, start, length),
+                status_code=206,  # Partial Content
+                headers=headers
+            )
+    
+    # 没有 Range 请求，返回完整文件
     return FileResponse(
         audio_path,
         media_type="audio/mpeg",
-        filename=f"{chapter_id}.mp3"
+        filename=f"{chapter_id}.mp3",
+        headers={"Accept-Ranges": "bytes"}  # 告诉浏览器支持 Range
     )
 
 

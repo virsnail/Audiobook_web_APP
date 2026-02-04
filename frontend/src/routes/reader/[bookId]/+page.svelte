@@ -124,37 +124,28 @@
       currentChapterIndex,
     });
 
+    // 计算章节内时间
+    const chapter = chaptersStore.chapters[targetChapterIndex];
+    const chapterTime = globalTime - chapter.globalStartTime;
+
     if (targetChapterIndex !== currentChapterIndex) {
       // 跨章节跳转
-
-      // 数据已预加载，无需等待
-      // await chaptersStore.loadChapterData(targetChapterIndex);
-
-      currentChapterIndex = targetChapterIndex;
-      // currentAudioSrc 会自动更新
-
-      // 计算章节内时间
-      const chapter = chaptersStore.chapters[targetChapterIndex];
-      const chapterTime = globalTime - chapter.globalStartTime;
-
       console.log("🔄 跨章节跳转", {
         chapterTime,
         globalStartTime: chapter.globalStartTime,
       });
 
-      // 等待 DOM 更新 src
+      // 先设置 pendingGlobalSeek，这样音频加载完成后会自动跳转
+      audioPlayerRef?.seekToChapterTime(targetChapterIndex, chapterTime);
+
+      // 切换章节索引，这会触发 currentAudioSrc 更新
+      currentChapterIndex = targetChapterIndex;
+
+      // 等待 DOM 更新 src，然后音频会重新加载
+      // handleLoadedMetadata 会处理 pendingGlobalSeek 并自动播放
       await tick();
-
-      // 显式通知 AudioPlayer 加载并播放
-      audioPlayerRef?.loadAndPlay(chapterTime);
-
-      // 注意：跨章节跳转不需要在这里调用 play()，
-      // 因为 AudioPlayer 的 handleLoadedMetadata 会处理 pendingGlobalSeek 并自动播放
     } else {
       // 同一章节，直接跳转
-      const chapter = chaptersStore.chapters[currentChapterIndex];
-      const chapterTime = globalTime - chapter.globalStartTime;
-
       console.log("➡️ 同章节跳转", { chapterTime });
 
       audioPlayerRef?.seekTo(chapterTime);

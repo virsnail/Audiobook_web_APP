@@ -74,27 +74,133 @@
     }
   }
 
+  // 检查时间是否在已缓冲范围内
+  function isTimeBuffered(time: number): boolean {
+    if (
+      !audioElement ||
+      !audioElement.buffered ||
+      audioElement.buffered.length === 0
+    ) {
+      return false;
+    }
+
+    for (let i = 0; i < audioElement.buffered.length; i++) {
+      const start = audioElement.buffered.start(i);
+      const end = audioElement.buffered.end(i);
+      if (time >= start && time <= end) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function applyPendingSeek() {
+    if (pendingGlobalSeek && audioElement && audioElement.duration > 0) {
+      const targetTime = pendingGlobalSeek.globalTime;
+
+      // 第一步：检查 readyState
+      if (audioElement.readyState < 2) {
+        console.log("⏳ readyState too low, waiting for canplay", {
+          readyState: audioElement.readyState,
+          targetTime,
+        });
+        return;
+      }
+
+      // 第二步：检查目标时间是否有效
+      if (targetTime < 0 || targetTime > audioElement.duration) {
+        console.error("❌ Invalid target time:", {
+          targetTime,
+          duration: audioElement.duration,
+        });
+        pendingGlobalSeek = null;
+        return;
+      }
+
+      // 第三步：检查是否在缓冲范围内（关键修复）
+      const buffered = isTimeBuffered(targetTime);
+      console.log("🔒 applyPendingSeek executing:", {
+        targetTime,
+        duration: audioElement.duration,
+        readyState: audioElement.readyState,
+        buffered,
+        bufferedRanges:
+          audioElement.buffered.length > 0
+            ? `[${audioElement.buffered.start(0).toFixed(2)} - ${audioElement.buffered.end(0).toFixed(2)}]`
+            : "none",
+      });
+
+      // 如果目标时间未缓冲，等待更多数据
+      if (!buffered && audioElement.readyState < 4) {
+        console.log("⏳ Target time not buffered, waiting...", {
+          targetTime,
+          readyState: audioElement.readyState,
+        });
+        // 保留 pendingGlobalSeek，等待下次事件
+        return;
+      }
+
+      try {
+        // 关键修复：等待 seeked 事件完成后再播放
+        const onSeeked = () => {
+          const actualTime = audioElement?.currentTime || 0;
+          console.log("✅ Seek completed. CurrentTime:", actualTime);
+
+          // 验证 seek 是否成功
+          if (Math.abs(actualTime - targetTime) > 0.5) {
+            console.warn(
+              "⚠️ Seek failed! Expected:",
+              targetTime,
+              "Got:",
+              actualTime,
+            );
+          }
+
+          audioElement?.removeEventListener("seeked", onSeeked);
+
+          // seek 完成后才播放
+          audioElement
+            ?.play()
+            .catch((err) => console.error("Auto-play failed:", err));
+        };
+
+        audioElement.addEventListener("seeked", onSeeked);
+
+        // 设置时间
+        console.log("🔒 Setting currentTime to:", targetTime);
+        audioElement.currentTime = targetTime;
+
+        // 清除 pending
+        pendingGlobalSeek = null;
+      } catch (e) {
+        console.error("🔒 Seek failed:", e);
+        pendingGlobalSeek = null;
+      }
+    }
+  }
+
   function handleLoadedMetadata() {
     if (audioElement) {
       duration = audioElement.duration;
-      // 恢复播放速度（因为 load() 会重置它）
       audioElement.playbackRate = playbackSpeed;
 
-      // 处理待处理的跨章节跳转
-      if (
-        pendingGlobalSeek &&
-        pendingGlobalSeek.chapterIndex === currentChapterIndex
-      ) {
-        // 已切换到正确章节，现在跳转到时间（这里的globalTime实际是章节内时间）
-        audioElement.currentTime = pendingGlobalSeek.globalTime;
-        pendingGlobalSeek = null;
+      console.log("📻 event:loadedmetadata", {
+        duration,
+        src: audioElement.src,
+        hasPending: !!pendingGlobalSeek,
+      });
 
-        // 自动开始播放
-        audioElement.play().catch((err) => {
-          console.error("自动播放失败:", err);
-        });
-      }
+      applyPendingSeek();
     }
+  }
+
+  function handleCanPlay() {
+    console.log("📻 event:canplay", {
+      src: audioElement?.src,
+      hasPending: !!pendingGlobalSeek,
+    });
+    // 再次尝试应用，以防 loadedmetadata 没能成功（例如 duration 当时不可用）
+    applyPendingSeek();
   }
 
   function handlePlay() {
@@ -140,16 +246,35 @@
   // 后退 15 秒
   function backward15() {
     if (!audioElement) return;
-    audioElement.currentTime = Math.max(0, audioElement.currentTime - 15);
+    const before = audioElement.currentTime;
+    const after = Math.max(0, audioElement.currentTime - 15);
+    console.log("⏪ backward15", {
+      before,
+      after,
+      readyState: audioElement.readyState,
+    });
+    audioElement.currentTime = after;
+    // 验证设置是否成功
+    console.log("⏪ backward15 result:", audioElement.currentTime);
   }
 
   // 前进 15 秒
   function forward15() {
     if (!audioElement) return;
-    audioElement.currentTime = Math.min(
+    const before = audioElement.currentTime;
+    const after = Math.min(
       audioElement.duration,
       audioElement.currentTime + 15,
     );
+    console.log("⏩ forward15", {
+      before,
+      after,
+      duration: audioElement.duration,
+      readyState: audioElement.readyState,
+    });
+    audioElement.currentTime = after;
+    // 验证设置是否成功
+    console.log("⏩ forward15 result:", audioElement.currentTime);
   }
 
   // 设置播放速度
@@ -189,26 +314,57 @@
     }
 
     const percent = (clientX - rect.left) / rect.width;
-    audioElement.currentTime = percent * audioElement.duration;
+    const targetTime = percent * audioElement.duration;
+    console.log("🎯 handleProgressClick", {
+      percent,
+      targetTime,
+      duration: audioElement.duration,
+      readyState: audioElement.readyState,
+    });
+    audioElement.currentTime = targetTime;
+    console.log("🎯 handleProgressClick result:", audioElement.currentTime);
   }
 
   // 外部跳转到指定章节内时间
   // 外部跳转（当前章节内）
   export function seekTo(time: number) {
+    console.log("🔍 seekTo called", {
+      time,
+      audioElement: !!audioElement,
+      readyState: audioElement?.readyState,
+    });
     if (audioElement) {
       audioElement.currentTime = time;
+      console.log("🔍 seekTo result:", audioElement.currentTime);
     }
   }
 
   // 跨章节跳转（由 page.svelte 调用）
   export function seekToChapterTime(chapterIndex: number, chapterTime: number) {
+    console.log("🎯 seekToChapterTime called", {
+      chapterIndex,
+      chapterTime,
+      currentChapterIndex,
+      isPlaying,
+    });
+
+    // 第一步：先暂停当前播放
+    if (audioElement) {
+      audioElement.pause();
+      console.log("⏸️ Paused for chapter switch");
+    }
+
     if (chapterIndex !== currentChapterIndex) {
       // 需要切换章节，保存待处理的跳转
+      console.log("🔄 Cross-chapter seek pending");
       pendingGlobalSeek = { globalTime: chapterTime, chapterIndex };
-      // page.svelte 会切换 audioSrc
+      // page.svelte 会切换 audioSrc，触发新音频加载
     } else {
       // 同一章节，直接跳转
+      console.log("➡️ Same chapter seek");
       seekTo(chapterTime);
+      // 手动播放
+      play();
     }
   }
 
@@ -267,17 +423,9 @@
     }
   }
 
-  // 监听 audioSrc 变化
-  $effect(() => {
-    // 依赖 audioSrc 的变化
-    void audioSrc;
-
-    if (audioElement) {
-      // 当源改变时，强制重新加载
-      // 这会触发 onloadedmetadata，从而处理 pendingGlobalSeek
-      audioElement.load();
-    }
-  });
+  // 注意：删除了显式调用 audioElement.load() 的 $effect
+  // 浏览器会自动处理 src 属性变化，不需要手动调用 load()
+  // 之前的 $effect 可能导致与 loadAndPlay 的竞态条件
 
   // 同步播放速度
   $effect(() => {
@@ -295,6 +443,7 @@
   src={audioSrc}
   ontimeupdate={handleTimeUpdate}
   onloadedmetadata={handleLoadedMetadata}
+  oncanplay={handleCanPlay}
   onplay={handlePlay}
   onpause={handlePause}
   onended={handleEnded}
