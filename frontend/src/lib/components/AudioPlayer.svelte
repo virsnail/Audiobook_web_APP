@@ -210,6 +210,9 @@
   export function loadAndPlay(time: number) {
     if (!audioElement) return;
 
+    // 清除任何待处理的跨章节 seek，避免干扰自动切换
+    pendingGlobalSeek = null;
+
     // 尝试直接跳转并播放
     // 注意：如果 src 刚改变，浏览器可能会处理加载
     try {

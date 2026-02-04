@@ -104,12 +104,12 @@
       // 切换章节索引，currentAudioSrc 会自动更新
       currentChapterIndex = nextIndex;
 
-      // 等待音频加载后自动播放
-      // 注意：这里仍然使用 setTimeout play 是不建议的，应该用 loadAndPlay 模式
-      // 但为了最小化改动，暂且保留，因为同页面下的切章通常比较顺滑
-      // 更好的做法是：
+      // 等待 DOM 更新
       await tick();
-      audioPlayerRef?.loadAndPlay(nextIndex, 0);
+
+      // 关键修复：从 0 秒开始播放下一章节
+      // loadAndPlay 只接受一个参数 time，不是 (chapterIndex, time)
+      audioPlayerRef?.loadAndPlay(0);
     }
   }
 
@@ -201,8 +201,6 @@
 
 <svelte:head>
   <title>{data.bookTitle || "阅读器"} - AudioBook</title>
-  <!-- 使用封面作为图标 -->
-  <link rel="icon" href="{data.basePath}/cover.jpg" />
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
