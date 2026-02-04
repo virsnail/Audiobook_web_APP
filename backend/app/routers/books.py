@@ -611,12 +611,42 @@ async def delete_book(
             detail="无权删除此书籍"
         )
     
-    # 删除文件
-    full_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
-    if os.path.exists(full_path):
-        shutil.rmtree(full_path)
     
-    # 删除数据库记录
+    # 删除文件系统中的所有书籍文件
+    full_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
+    
+    # 安全检查：确保路径在 MEDIA_PATH 内，防止删除系统文件
+    media_books_path = os.path.join(settings.MEDIA_PATH, "books")
+    if not os.path.abspath(full_path).startswith(os.path.abspath(media_books_path)):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid storage path"
+        )
+    
+    if os.path.exists(full_path):
+        # 列出将要删除的文件（用于日志记录）
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        deleted_files = []
+        for root, dirs, files in os.walk(full_path):
+            for file in files:
+                deleted_files.append(os.path.join(root, file))
+        
+        logger.info(f"Deleting book {book_id} with {len(deleted_files)} files:")
+        for file_path in deleted_files:
+            logger.info(f"  - {os.path.relpath(file_path, full_path)}")
+        
+        # 删除整个书籍目录（包括所有音频、文本、对齐文件、封面、未来的 epub 等）
+        shutil.rmtree(full_path)
+        logger.info(f"Successfully deleted directory: {full_path}")
+    else:
+        # 文件已不存在，但继续删除数据库记录
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Book directory not found: {full_path}, proceeding to delete DB record only")
+    
+    # 删除数据库记录（包括级联删除相关的 shares 和 reading_progress）
     await db.delete(book)
     await db.commit()
     
