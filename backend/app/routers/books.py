@@ -17,7 +17,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.book import Book, BookShare, ReadingProgress
 from app.schemas.book import BookResponse, BookListResponse, BookProgressUpdate, BookProgressResponse
-from app.utils.deps import get_current_user, get_current_user_optional
+from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query
 from app.config import settings
 
 router = APIRouter()
@@ -36,6 +36,10 @@ def process_book_zip(zip_path: str, output_dir: str) -> dict:
     """
     处理上传的 ZIP 文件，提取并整理章节文件
     
+    支持两种命名格式：
+    1. 旧格式: 0000001.mp3, 0000001.txt, 0000001.json
+    2. 新格式: ch001_audio.mp3, ch001_text.txt, ch001_align.json
+    
     返回 manifest 数据
     """
     chapters = []
@@ -44,41 +48,75 @@ def process_book_zip(zip_path: str, output_dir: str) -> dict:
         # 获取所有文件名
         file_names = zf.namelist()
         
-        # 查找所有章节 ID（从 mp3 文件提取）
-        chapter_ids = set()
-        pattern = re.compile(r'^(\d{1,9})\.(mp3|txt|json)$', re.IGNORECASE)
+        # 查找所有章节 ID
+        chapter_files = {}  # {chapter_id: {mp3: name, txt: name, json: name}}
+        
+        # 匹配两种格式：
+        # 格式1: 纯数字 (0000001.mp3, 0000001.txt, 0000001.json)
+        pattern_old = re.compile(r'^(\d{1,9})\.(mp3|txt|json)$', re.IGNORECASE)
+        # 格式2: ch开头 (ch001_audio.mp3, ch001_text.txt, ch001_align.json)
+        pattern_new = re.compile(r'^ch(\d{1,9})_(audio\.mp3|text\.txt|align\.json)$', re.IGNORECASE)
         
         for name in file_names:
             # 获取文件名（去除目录）
             basename = os.path.basename(name)
-            match = pattern.match(basename)
-            if match:
-                chapter_ids.add(match.group(1))
+            
+            # 尝试匹配旧格式
+            match_old = pattern_old.match(basename)
+            if match_old:
+                chapter_id = match_old.group(1)
+                file_type = match_old.group(2).lower()
+                
+                if chapter_id not in chapter_files:
+                    chapter_files[chapter_id] = {}
+                chapter_files[chapter_id][file_type] = name
+                continue
+            
+            # 尝试匹配新格式
+            match_new = pattern_new.match(basename)
+            if match_new:
+                chapter_id = match_new.group(1)
+                file_suffix = match_new.group(2).lower()
+                
+                if chapter_id not in chapter_files:
+                    chapter_files[chapter_id] = {}
+                
+                # 映射新格式到标准类型
+                if file_suffix == 'audio.mp3':
+                    chapter_files[chapter_id]['mp3'] = name
+                elif file_suffix == 'text.txt':
+                    chapter_files[chapter_id]['txt'] = name
+                elif file_suffix == 'align.json':
+                    chapter_files[chapter_id]['json'] = name
         
-        if not chapter_ids:
-            raise ValueError("ZIP 文件中未找到有效的章节文件 (格式: 0000001.mp3/txt/json)")
+        # 查找封面图片 (cover.jpg/png/jpeg)
+        cover_file = None
+        for name in file_names:
+            basename = os.path.basename(name)
+            if re.match(r'^cover\.(jpg|jpeg|png)$', basename, re.IGNORECASE):
+                cover_file = name
+                break
+        
+        # 提取封面
+        if cover_file:
+            cover_ext = os.path.splitext(cover_file)[1].lower()
+            cover_path = os.path.join(output_dir, f"cover{cover_ext}")
+            with zf.open(cover_file) as src, open(cover_path, 'wb') as dst:
+                shutil.copyfileobj(src, dst)
+
+        if not chapter_files:
+            raise ValueError("ZIP 文件中未找到有效的章节文件\n支持格式:\n  - 旧格式: 0000001.mp3/txt/json\n  - 新格式: ch001_audio.mp3, ch001_text.txt, ch001_align.json")
         
         # 按章节 ID 排序
-        sorted_ids = sorted(chapter_ids)
+        sorted_ids = sorted(chapter_files.keys())
         
         total_duration = 0.0
         
         for ch_id in sorted_ids:
-            # 查找对应的文件
-            mp3_file = None
-            txt_file = None
-            json_file = None
+            files = chapter_files[ch_id]
             
-            for name in file_names:
-                basename = os.path.basename(name)
-                if basename.lower() == f"{ch_id}.mp3":
-                    mp3_file = name
-                elif basename.lower() == f"{ch_id}.txt":
-                    txt_file = name
-                elif basename.lower() == f"{ch_id}.json":
-                    json_file = name
-            
-            if not all([mp3_file, txt_file, json_file]):
+            # 检查是否有完整的三个文件
+            if not all(key in files for key in ['mp3', 'txt', 'json']):
                 continue  # 跳过不完整的章节
             
             # 提取文件
@@ -86,13 +124,13 @@ def process_book_zip(zip_path: str, output_dir: str) -> dict:
             text_path = os.path.join(output_dir, f"{ch_id}_text.txt")
             align_path = os.path.join(output_dir, f"{ch_id}_align.json")
             
-            with zf.open(mp3_file) as src, open(audio_path, 'wb') as dst:
+            with zf.open(files['mp3']) as src, open(audio_path, 'wb') as dst:
                 shutil.copyfileobj(src, dst)
             
-            with zf.open(txt_file) as src, open(text_path, 'wb') as dst:
+            with zf.open(files['txt']) as src, open(text_path, 'wb') as dst:
                 shutil.copyfileobj(src, dst)
             
-            with zf.open(json_file) as src, open(align_path, 'wb') as dst:
+            with zf.open(files['json']) as src, open(align_path, 'wb') as dst:
                 shutil.copyfileobj(src, dst)
             
             # 获取音频时长
@@ -162,7 +200,7 @@ async def create_book(
     title: str = Form(...),
     author: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    book_zip: UploadFile = File(..., description="包含多章节文件的 ZIP (0000001.mp3/txt/json ...)"),
+    book_zip: UploadFile = File(..., description="包含多章节文件的 ZIP (支持: 0000001.mp3/txt/json 或 ch001_audio.mp3/text.txt/align.json)"),
     cover_file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -170,9 +208,16 @@ async def create_book(
     """
     上传新书籍（ZIP 格式）
     
-    ZIP 文件应包含：
+    ZIP 文件支持两种命名格式：
+    
+    旧格式:
     - 0000001.mp3, 0000001.txt, 0000001.json
     - 0000002.mp3, 0000002.txt, 0000002.json
+    - ...
+    
+    新格式:
+    - ch001_audio.mp3, ch001_text.txt, ch001_align.json
+    - ch002_audio.mp3, ch002_text.txt, ch002_align.json
     - ...
     """
     # 验证文件类型
@@ -207,6 +252,13 @@ async def create_book(
             cover_path = f"{storage_path}/cover.jpg"
             with open(os.path.join(full_path, "cover.jpg"), "wb") as f:
                 shutil.copyfileobj(cover_file.file, f)
+        else:
+            # 检查 ZIP 中是否包含封面
+            for ext in ['.jpg', '.jpeg', '.png']:
+                extracted_cover = os.path.join(full_path, f"cover{ext}")
+                if os.path.exists(extracted_cover):
+                    cover_path = f"{storage_path}/cover{ext}"
+                    break
         
         # 计算总段落数
         total_segments = 0
@@ -323,7 +375,7 @@ async def get_manifest(
 async def get_chapter_audio(
     book_id: uuid.UUID,
     chapter_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_token_or_query),
     db: AsyncSession = Depends(get_db)
 ):
     """获取指定章节的音频文件"""
@@ -574,3 +626,35 @@ async def share_book(
         await db.commit()
         
         return {"message": "书籍已设为公开"}
+
+
+@router.get("/{book_id}/cover", summary="获取书籍封面")
+async def get_book_cover(
+    book_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取书籍封面图片"""
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在"
+        )
+    
+    if not book.cover_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="封面不存在"
+        )
+    
+    cover_full_path = os.path.join(settings.MEDIA_PATH, "books", book.cover_path)
+    
+    if not os.path.exists(cover_full_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="封面文件丢失"
+        )
+    
+    return FileResponse(cover_full_path)

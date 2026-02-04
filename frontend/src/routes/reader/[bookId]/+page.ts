@@ -4,7 +4,10 @@
  * 加载 manifest.json 和第一章内容
  */
 
+export const ssr = false; // Disable SSR to access authStore
+
 import type { BookManifest } from '$lib/types/chapter';
+import { authStore } from '$lib/stores/auth.svelte';
 
 interface LoadParams {
   params: { bookId: string };
@@ -18,19 +21,27 @@ export const load = async ({ params, fetch }: LoadParams) => {
   const isDev = import.meta.env.DEV;
   const basePath = isDev ? '/sample' : `/api/books/${bookId}`;
   
+  const headers = authStore.getAuthHeader();
+
   try {
     // 1. 加载 manifest（章节目录）
-    const manifestRes = await fetch(`${basePath}/manifest.json`);
+    const manifestUrl = `${basePath}/manifest`; // API endpoint, not static file
+    const manifestRes = await fetch(manifestUrl, { headers });
     if (!manifestRes.ok) {
-      throw new Error('Failed to load manifest');
+      throw new Error(`Failed to load manifest from ${manifestUrl}`);
     }
     const manifest: BookManifest = await manifestRes.json();
     
     // 2. 加载第一章的内容
     const firstChapterId = manifest.chapters[0]?.id || 'ch001';
+    
+    // Construct API URLs
+    const textUrl = `${basePath}/chapters/${firstChapterId}/text`;
+    const alignUrl = `${basePath}/chapters/${firstChapterId}/alignment`;
+    
     const [textRes, alignRes] = await Promise.all([
-      fetch(`${basePath}/${firstChapterId}_text.txt`),
-      fetch(`${basePath}/${firstChapterId}_align.json`),
+      fetch(textUrl, { headers }),
+      fetch(alignUrl, { headers }),
     ]);
     
     const firstChapterText = textRes.ok ? await textRes.text() : '';
