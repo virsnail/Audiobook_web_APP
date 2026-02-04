@@ -32,6 +32,22 @@ export const load = async ({ params, fetch }: LoadParams) => {
     }
     const manifest: BookManifest = await manifestRes.json();
     
+    // 获取书籍标题
+    let bookTitle = '未命名书籍';
+    if (!isDev) {
+      try {
+        const bookInfoRes = await fetch(`/api/books/${bookId}`, { headers });
+        if (bookInfoRes.ok) {
+          const bookInfo = await bookInfoRes.json();
+          bookTitle = bookInfo.title || bookId;
+        }
+      } catch {
+        bookTitle = bookId;
+      }
+    } else {
+      bookTitle = '网络国家';
+    }
+    
     // 2. 加载第一章的内容
     const firstChapterId = manifest.chapters[0]?.id || 'ch001';
     
@@ -57,7 +73,7 @@ export const load = async ({ params, fetch }: LoadParams) => {
         textContent: firstChapterText,
         segments: firstChapterSegments,
       },
-      bookTitle: isDev ? '网络国家' : bookId,
+      bookTitle,
     };
   } catch (error) {
     console.error('加载书籍数据失败:', error);
