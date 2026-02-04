@@ -146,7 +146,7 @@
       await tick();
 
       // 显式通知 AudioPlayer 加载并播放
-      audioPlayerRef?.loadAndPlay(targetChapterIndex, chapterTime);
+      audioPlayerRef?.loadAndPlay(chapterTime);
 
       // 注意：跨章节跳转不需要在这里调用 play()，
       // 因为 AudioPlayer 的 handleLoadedMetadata 会处理 pendingGlobalSeek 并自动播放

@@ -19,13 +19,12 @@
   let shareLoading = $state(false);
   let shareError = $state("");
 
-  // 示例书籍（未登录时显示）
+  // 示例书籍（保留供参考，当前未使用）
   const sampleBooks = [
     {
       id: "sample",
       title: "What We Value - 深度分析",
       description: "基于神经科学的价值系统解析",
-      // 使用本地封面图片
       cover: "url('/sample/cover.jpg')",
     },
   ];
@@ -43,7 +42,7 @@
   // 获取书籍封面
   function getBookCover(book: Book, index: number): string {
     if (book.cover_path) {
-      return `url(/api/media/${book.cover_path})`;
+      return `url(/api/books/${book.id}/cover)`;
     }
     return gradients[index % gradients.length];
   }
@@ -251,156 +250,18 @@
       <div class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600">
         {error}
       </div>
-    {:else}
+    {:else if authStore.isLoggedIn}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <!-- 已登录用户的书籍 -->
-        {#if authStore.isLoggedIn}
-          {#each books as book, i}
-            <div
-              class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
-            >
-              <!-- 封面 -->
-              <a href="/reader/{book.id}" class="block">
-                <div
-                  class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
-                  style="background-image: {getBookCover(book, i)}"
-                >
-                  <div class="w-full">
-                    <h2
-                      class="text-xl font-bold text-white drop-shadow-lg line-clamp-2"
-                    >
-                      {book.title}
-                    </h2>
-                    {#if book.author}
-                      <p class="text-white/80 text-sm mt-1">{book.author}</p>
-                    {/if}
-                  </div>
-                </div>
-              </a>
-
-              <!-- 信息和操作 -->
-              <div class="p-4">
-                <p class="text-gray-500 text-sm line-clamp-2">
-                  {book.description || "暂无简介"}
-                </p>
-
-                <!-- 操作按钮 -->
-                <div class="mt-3 flex items-center justify-between">
-                  <a
-                    href="/reader/{book.id}"
-                    class="flex items-center text-blue-600 text-sm font-medium"
-                  >
-                    <span>开始阅读</span>
-                    <svg
-                      class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </a>
-
-                  <div class="flex items-center gap-2">
-                    <!-- 分享按钮 -->
-                    <button
-                      onclick={() => openShareDialog(book.id)}
-                      class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="分享"
-                    >
-                      <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                        />
-                      </svg>
-                    </button>
-
-                    <!-- 删除按钮 -->
-                    <button
-                      onclick={() => handleDelete(book.id)}
-                      class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="删除"
-                    >
-                      <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          {:else}
-            <!-- 空状态 -->
-            <div class="col-span-full text-center py-16">
-              <svg
-                class="w-16 h-16 text-gray-300 mx-auto mb-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                />
-              </svg>
-              <h3 class="text-lg font-medium text-gray-900">还没有书籍</h3>
-              <p class="text-gray-500 mt-1">上传你的第一本书开始阅读吧</p>
-              <a
-                href="/upload"
-                class="inline-flex items-center gap-2 mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
-              >
-                <svg
-                  class="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                上传书籍
-              </a>
-            </div>
-          {/each}
-        {:else}
-          <!-- 未登录显示示例书籍 -->
-          {#each sampleBooks as book}
-            <a
-              href="/reader/{book.id}"
-              class="group block bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
-            >
+        {#each books as book, i}
+          <div
+            class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
+          >
+            <!-- 封面 -->
+            <a href="/reader/{book.id}" class="block">
               <div
                 class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
-                style="background-image: {book.cover}"
+                style="background-image: {getBookCover(book, i)}"
               >
                 <div class="w-full">
                   <h2
@@ -408,15 +269,24 @@
                   >
                     {book.title}
                   </h2>
+                  {#if book.author}
+                    <p class="text-white/80 text-sm mt-1">{book.author}</p>
+                  {/if}
                 </div>
               </div>
+            </a>
 
-              <div class="p-4">
-                <p class="text-gray-500 text-sm line-clamp-2">
-                  {book.description}
-                </p>
-                <div
-                  class="mt-3 flex items-center text-blue-600 text-sm font-medium"
+            <!-- 信息和操作 -->
+            <div class="p-4">
+              <p class="text-gray-500 text-sm line-clamp-2">
+                {book.description || "暂无简介"}
+              </p>
+
+              <!-- 操作按钮 -->
+              <div class="mt-3 flex items-center justify-between">
+                <a
+                  href="/reader/{book.id}"
+                  class="flex items-center text-blue-600 text-sm font-medium"
                 >
                   <span>开始阅读</span>
                   <svg
@@ -432,19 +302,59 @@
                       d="M9 5l7 7-7 7"
                     />
                   </svg>
+                </a>
+
+                <div class="flex items-center gap-2">
+                  <!-- 分享按钮 -->
+                  <button
+                    onclick={() => openShareDialog(book.id)}
+                    class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="分享"
+                  >
+                    <svg
+                      class="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                      />
+                    </svg>
+                  </button>
+
+                  <!-- 删除按钮 -->
+                  <button
+                    onclick={() => handleDelete(book.id)}
+                    class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    title="删除"
+                  >
+                    <svg
+                      class="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
                 </div>
               </div>
-            </a>
-          {/each}
-        {/if}
-      </div>
-
-      <!-- 开发模式提示（未登录时显示） -->
-      {#if !authStore.isLoggedIn}
-        <div class="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-          <div class="flex items-start gap-3">
+            </div>
+          </div>
+        {:else}
+          <!-- 空状态 -->
+          <div class="col-span-full text-center py-16">
             <svg
-              class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0"
+              class="w-16 h-16 text-gray-300 mx-auto mb-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -453,18 +363,146 @@
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
               />
             </svg>
-            <div>
-              <p class="text-amber-800 font-medium">开发模式</p>
-              <p class="text-amber-700 text-sm mt-1">
-                登录后可上传和管理自己的书籍
+            <h3 class="text-lg font-medium text-gray-900">还没有书籍</h3>
+            <p class="text-gray-500 mt-1">上传你的第一本书开始阅读吧</p>
+            <a
+              href="/upload"
+              class="inline-flex items-center gap-2 mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              上传书籍
+            </a>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <!-- 未登录显示 Landing Page -->
+      <div class="py-16 text-center">
+        <div class="max-w-3xl mx-auto">
+          <h2
+            class="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 mb-6"
+          >
+            AudioBook Reader
+          </h2>
+          <p class="text-xl text-gray-600 mb-10 leading-relaxed">
+            沉浸式有声书阅读体验<br />
+            实时文本对齐，深度学习的最佳伴侣
+          </p>
+
+          <div
+            class="flex flex-col sm:flex-row items-center justify-center gap-4"
+          >
+            <a
+              href="/login"
+              class="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+            >
+              立即登录
+            </a>
+            <a
+              href="/register"
+              class="w-full sm:w-auto px-8 py-3.5 bg-white text-gray-700 font-medium rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
+            >
+              注册账号
+            </a>
+          </div>
+
+          <!-- 特性展示 -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mt-20 text-left">
+            <div
+              class="p-6 bg-white rounded-2xl shadow-sm border border-gray-100"
+            >
+              <div
+                class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4"
+              >
+                <svg
+                  class="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                  />
+                </svg>
+              </div>
+              <h3 class="font-bold text-gray-900 text-lg mb-2">文本同步</h3>
+              <p class="text-gray-500 text-sm">
+                精确到句子的音频文本对齐，所听即所读，提升学习效率。
+              </p>
+            </div>
+
+            <div
+              class="p-6 bg-white rounded-2xl shadow-sm border border-gray-100"
+            >
+              <div
+                class="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-4"
+              >
+                <svg
+                  class="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                  />
+                </svg>
+              </div>
+              <h3 class="font-bold text-gray-900 text-lg mb-2">沉浸体验</h3>
+              <p class="text-gray-500 text-sm">
+                极简设计，专注阅读本质。支持深色模式，保护视力。
+              </p>
+            </div>
+
+            <div
+              class="p-6 bg-white rounded-2xl shadow-sm border border-gray-100"
+            >
+              <div
+                class="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center mb-4"
+              >
+                <svg
+                  class="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <h3 class="font-bold text-gray-900 text-lg mb-2">私有部署</h3>
+              <p class="text-gray-500 text-sm">
+                完全掌握自己的数据，Docker 一键部署，安全可靠。
               </p>
             </div>
           </div>
         </div>
-      {/if}
+      </div>
     {/if}
   </main>
 </div>
