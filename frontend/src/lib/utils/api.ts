@@ -106,6 +106,8 @@ export interface Book {
   total_duration?: number;
   total_segments?: number;
   is_public: boolean;
+  book_type?: string; // "txt" | "epub"
+  epub_structure?: string; // JSON for EPUB metadata
   created_at: string;
 }
 

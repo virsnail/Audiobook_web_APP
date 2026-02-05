@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import { authStore } from "$lib/stores/auth.svelte";
 
   interface Props {
     audioSrc: string;
@@ -48,7 +49,19 @@
   const PLAYBACK_SPEEDS = [3, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1.0, 0.7];
 
   onMount(() => {
-    const savedSpeed = localStorage.getItem("audio_playback_speed");
+    // 优先使用当前用户专属的配置
+    let savedSpeed = null;
+    if (authStore.user?.id) {
+      savedSpeed = localStorage.getItem(
+        `audio_playback_speed_${authStore.user.id}`,
+      );
+    }
+
+    // 降级：如果没有专属配置，尝试读取旧的全局配置（迁移过渡）
+    if (!savedSpeed) {
+      savedSpeed = localStorage.getItem("audio_playback_speed");
+    }
+
     if (savedSpeed) {
       playbackSpeed = parseFloat(savedSpeed);
     }
@@ -283,7 +296,16 @@
   // 设置播放速度
   function setSpeed(speed: number) {
     playbackSpeed = speed;
-    localStorage.setItem("audio_playback_speed", speed.toString());
+
+    if (authStore.user?.id) {
+      localStorage.setItem(
+        `audio_playback_speed_${authStore.user.id}`,
+        speed.toString(),
+      );
+    } else {
+      localStorage.setItem("audio_playback_speed", speed.toString());
+    }
+
     if (audioElement) {
       audioElement.playbackRate = speed;
     }

@@ -19,6 +19,7 @@ from app.models.book import Book, BookShare, ReadingProgress
 from app.schemas.book import BookResponse, BookListResponse, BookProgressUpdate, BookProgressResponse
 from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query
 from app.config import settings
+from app.utils import epub_utils  # 方案2: EPUB processing
 
 router = APIRouter()
 
@@ -36,118 +37,164 @@ def process_book_zip(zip_path: str, output_dir: str) -> dict:
     """
     处理上传的 ZIP 文件，提取并整理章节文件
     
-    支持两种命名格式：
-    1. 旧格式: 0000001.mp3, 0000001.txt, 0000001.json
-    2. 新格式: ch001_audio.mp3, ch001_text.txt, ch001_align.json
+    支持两种格式:
+    - 方案1 (TXT): ch001_audio.mp3, ch001_text.txt, ch001_align.json
+    - 方案2 (EPUB): bookname.epub + ch001_audio.mp3 + ch001_align.json
     
     返回 manifest 数据
     """
     chapters = []
+    epub_manifest = None
+    book_type = "txt"
+    extracted_files = []
     
+    # 1. 预先解压所有文件 (除了系统文件)
     with zipfile.ZipFile(zip_path, 'r') as zf:
-        # 获取所有文件名
         file_names = zf.namelist()
-        
-        # 查找所有章节 ID
-        chapter_files = {}  # {chapter_id: {mp3: name, txt: name, json: name}}
-        
-        # 匹配两种格式：
-        # 格式1: 纯数字 (0000001.mp3, 0000001.txt, 0000001.json)
-        pattern_old = re.compile(r'^(\d{1,9})\.(mp3|txt|json)$', re.IGNORECASE)
-        # 格式2: ch开头 (ch001_audio.mp3, ch001_text.txt, ch001_align.json)
-        pattern_new = re.compile(r'^ch(\d{1,9})_(audio\.mp3|text\.txt|align\.json)$', re.IGNORECASE)
-        
         for name in file_names:
-            # 获取文件名（去除目录）
-            basename = os.path.basename(name)
-            
-            # 尝试匹配旧格式
-            match_old = pattern_old.match(basename)
-            if match_old:
-                chapter_id = match_old.group(1)
-                file_type = match_old.group(2).lower()
-                
-                if chapter_id not in chapter_files:
-                    chapter_files[chapter_id] = {}
-                chapter_files[chapter_id][file_type] = name
+            if name.startswith('__MACOSX') or name.endswith('.DS_Store') or name.endswith('/'):
                 continue
             
-            # 尝试匹配新格式
-            match_new = pattern_new.match(basename)
-            if match_new:
-                chapter_id = match_new.group(1)
-                file_suffix = match_new.group(2).lower()
-                
-                if chapter_id not in chapter_files:
-                    chapter_files[chapter_id] = {}
-                
-                # 映射新格式到标准类型
-                if file_suffix == 'audio.mp3':
-                    chapter_files[chapter_id]['mp3'] = name
-                elif file_suffix == 'text.txt':
-                    chapter_files[chapter_id]['txt'] = name
-                elif file_suffix == 'align.json':
-                    chapter_files[chapter_id]['json'] = name
-        
-        # 查找封面图片 (cover.jpg/png/jpeg)
-        cover_file = None
-        for name in file_names:
             basename = os.path.basename(name)
-            if re.match(r'^cover\.(jpg|jpeg|png)$', basename, re.IGNORECASE):
-                cover_file = name
-                break
-        
-        # 提取封面
-        if cover_file:
-            cover_ext = os.path.splitext(cover_file)[1].lower()
-            cover_path = os.path.join(output_dir, f"cover{cover_ext}")
-            with zf.open(cover_file) as src, open(cover_path, 'wb') as dst:
+            if not basename: continue
+            
+            target_path = os.path.join(output_dir, basename)
+            with zf.open(name) as src, open(target_path, 'wb') as dst:
                 shutil.copyfileobj(src, dst)
+            extracted_files.append(basename)
 
-        if not chapter_files:
-            raise ValueError("ZIP 文件中未找到有效的章节文件\n支持格式:\n  - 旧格式: 0000001.mp3/txt/json\n  - 新格式: ch001_audio.mp3, ch001_text.txt, ch001_align.json")
+    # 2. 判断是否包含 EPUB 文件 (方案2)
+    epub_file_name = next((f for f in extracted_files if f.lower().endswith('.epub')), None)
+    
+    if epub_file_name:
+        # 方案2: 处理 EPUB
+        book_type = "epub"
+        epub_path = os.path.join(output_dir, epub_file_name)
         
-        # 按章节 ID 排序
-        sorted_ids = sorted(chapter_files.keys())
+        # 解压 EPUB
+        epub_extract_dir = epub_utils.extract_epub(epub_path, output_dir)
         
-        total_duration = 0.0
+        # 收集对齐文件列表
+        align_files = [f for f in extracted_files if re.match(r'^ch(\d{1,9})_align\.json$', f, re.IGNORECASE)]
         
-        for ch_id in sorted_ids:
-            files = chapter_files[ch_id]
+        # 分析 EPUB 结构并生成 manifest
+        try:
+            # 尝试提取封面
+            epub_utils.extract_cover_image(epub_extract_dir, output_dir)
+
+            epub_manifest = epub_utils.create_epub_manifest(epub_extract_dir, align_files)
             
-            # 检查是否有完整的三个文件
-            if not all(key in files for key in ['mp3', 'txt', 'json']):
-                continue  # 跳过不完整的章节
+            # 保存 EPUB manifest
+            epub_manifest_path = os.path.join(output_dir, "epub_manifest.json")
+            with open(epub_manifest_path, 'w', encoding='utf-8') as f:
+                json.dump(epub_manifest, f, ensure_ascii=False, indent=2)
             
-            # 提取文件
-            audio_path = os.path.join(output_dir, f"{ch_id}_audio.mp3")
-            text_path = os.path.join(output_dir, f"{ch_id}_text.txt")
-            align_path = os.path.join(output_dir, f"{ch_id}_align.json")
+            # 注意：如果 extracted_files 中包含 "manifest.json"，它已经存在于 output_dir 中了
+            # 无需额外操作
             
-            with zf.open(files['mp3']) as src, open(audio_path, 'wb') as dst:
-                shutil.copyfileobj(src, dst)
+            return {
+                "type": "epub",
+                "epub_manifest": epub_manifest,
+                "totalDuration": 0,  # 会在后面计算
+                "chapters": epub_manifest.get('chapters', [])
+            }
+        
+        except Exception as e:
+            raise ValueError(f"EPUB 处理失败: {str(e)}")
+    
+    # ===== 方案1: 处理 TXT (对已解压的文件进行整理) =====
+    
+    # 查找所有章节 ID
+    chapter_files = {}  # {chapter_id: {mp3: name, txt: name, json: name}}
+    
+    # 匹配两种格式：
+    # 格式1: 纯数字 (0000001.mp3, 0000001.txt, 0000001.json)
+    pattern_old = re.compile(r'^(\d{1,9})\.(mp3|txt|json)$', re.IGNORECASE)
+    # 格式2: ch开头 (ch001_audio.mp3, ch001_text.txt, ch001_align.json)
+    pattern_new = re.compile(r'^ch(\d{1,9})_(audio\.mp3|text\.txt|align\.json)$', re.IGNORECASE)
+    
+    for basename in extracted_files:
+        # 尝试匹配旧格式
+        match_old = pattern_old.match(basename)
+        if match_old:
+            chapter_id = match_old.group(1)
+            file_type = match_old.group(2).lower()
             
-            with zf.open(files['txt']) as src, open(text_path, 'wb') as dst:
-                shutil.copyfileobj(src, dst)
+            if chapter_id not in chapter_files:
+                chapter_files[chapter_id] = {}
+            chapter_files[chapter_id][file_type] = basename
+            continue
+        
+        # 尝试匹配新格式
+        match_new = pattern_new.match(basename)
+        if match_new:
+            chapter_id = match_new.group(1)
+            file_suffix = match_new.group(2).lower()
             
-            with zf.open(files['json']) as src, open(align_path, 'wb') as dst:
-                shutil.copyfileobj(src, dst)
+            if chapter_id not in chapter_files:
+                chapter_files[chapter_id] = {}
             
-            # 获取音频时长
-            duration = get_mp3_duration(audio_path)
+            # 映射新格式到标准类型
+            if file_suffix == 'audio.mp3':
+                chapter_files[chapter_id]['mp3'] = basename
+            elif file_suffix == 'text.txt':
+                chapter_files[chapter_id]['txt'] = basename
+            elif file_suffix == 'align.json':
+                chapter_files[chapter_id]['json'] = basename
+    
+    # 查找封面图片 (如果存在)
+    if not any(re.match(r'^cover\.(jpg|jpeg|png)$', f, re.IGNORECASE) for f in extracted_files):
+        # 如果没有标准封面，看有没有被解压进去
+        pass 
+        
+    if not chapter_files:
+        raise ValueError("ZIP 文件中未找到有效的章节文件\n支持格式:\n  - 旧格式: 0000001.mp3/txt/json\n  - 新格式: ch001_audio.mp3, ch001_text.txt, ch001_align.json")
+    
+    # 按章节 ID 排序
+    sorted_ids = sorted(chapter_files.keys())
+    
+    total_duration = 0.0
+    
+    for ch_id in sorted_ids:
+        files = chapter_files[ch_id]
+        
+        # 检查是否有完整的三个文件
+        if not all(key in files for key in ['mp3', 'txt', 'json']):
+            continue  # 跳过不完整的章节
+        
+        # 目标文件路径
+        audio_path = os.path.join(output_dir, f"{ch_id}_audio.mp3")
+        text_path = os.path.join(output_dir, f"{ch_id}_text.txt")
+        align_path = os.path.join(output_dir, f"{ch_id}_align.json")
+        
+        # 重命名/移动文件到规范名称
+        # 如果原文件名就是规范名称，os.rename 可能会报错（同一文件），所以先检查
+        
+        src_mp3 = os.path.join(output_dir, files['mp3'])
+        if src_mp3 != audio_path: shutil.move(src_mp3, audio_path)
             
-            chapters.append({
-                "id": ch_id,
-                "duration": round(duration, 2)
-            })
+        src_txt = os.path.join(output_dir, files['txt'])
+        if src_txt != text_path: shutil.move(src_txt, text_path)
             
-            total_duration += duration
+        src_json = os.path.join(output_dir, files['json'])
+        if src_json != align_path: shutil.move(src_json, align_path)
+        
+        # 获取音频时长
+        duration = get_mp3_duration(audio_path)
+        
+        chapters.append({
+            "id": ch_id,
+            "duration": round(duration, 2)
+        })
+        
+        total_duration += duration
     
     if not chapters:
         raise ValueError("未能处理任何完整的章节")
     
-    # 生成 manifest
+    # 生成 manifest (方案1)
     manifest = {
+        "type": "txt",
         "chapters": chapters,
         "totalDuration": round(total_duration, 2)
     }
@@ -156,6 +203,7 @@ def process_book_zip(zip_path: str, output_dir: str) -> dict:
     manifest_path = os.path.join(output_dir, "manifest.json")
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
+
     
     return manifest
 
@@ -260,17 +308,51 @@ async def create_book(
                     cover_path = f"{storage_path}/cover{ext}"
                     break
         
-        # 计算总段落数
+        # 计算总段落数和书籍类型
         total_segments = 0
-        for chapter in manifest["chapters"]:
-            align_path = os.path.join(full_path, f"{chapter['id']}_align.json")
-            if os.path.exists(align_path):
-                with open(align_path, 'r', encoding='utf-8') as f:
-                    align_data = json.load(f)
-                    if isinstance(align_data, list):
-                        total_segments += len(align_data)
-                    elif isinstance(align_data, dict) and "segments" in align_data:
-                        total_segments += len(align_data["segments"])
+        book_type = manifest.get("type", "txt")
+        epub_structure_json = None
+        
+        if book_type == "epub":
+            # 方案2: EPUB 书籍
+            epub_manifest = manifest.get("epub_manifest", {})
+            epub_structure_json = json.dumps(epub_manifest, ensure_ascii=False)
+            
+            # 从 EPUB manifest 计算章节数
+            for chapter in epub_manifest.get('chapters', []):
+                if chapter.get('has_audio'):
+                    # 读取对齐文件计算段落数
+                    chapter_id = chapter['id']
+                    align_path = os.path.join(full_path, f"ch{chapter_id}_align.json")
+                    if os.path.exists(align_path):
+                        with open(align_path, 'r', encoding='utf-8') as f:
+                            align_data = json.load(f)
+                            if isinstance(align_data, list):
+                                total_segments += len(align_data)
+                            elif isinstance(align_data, dict) and "segments" in align_data:
+                                total_segments += len(align_data["segments"])
+            
+            # 计算总时长（从音频文件）
+            total_duration = 0
+            for chapter in epub_manifest.get('chapters', []):
+                if chapter.get('audio_file'):
+                    audio_path = os.path.join(full_path, chapter['audio_file'])
+                    if os.path.exists(audio_path):
+                        total_duration += get_mp3_duration(audio_path)
+        
+        else:
+            # 方案1: TXT 书籍（原有逻辑）
+            for chapter in manifest["chapters"]:
+                align_path = os.path.join(full_path, f"{chapter['id']}_align.json")
+                if os.path.exists(align_path):
+                    with open(align_path, 'r', encoding='utf-8') as f:
+                        align_data = json.load(f)
+                        if isinstance(align_data, list):
+                            total_segments += len(align_data)
+                        elif isinstance(align_data, dict) and "segments" in align_data:
+                            total_segments += len(align_data["segments"])
+            
+            total_duration = manifest.get("totalDuration", 0)
         
         # 创建数据库记录
         book = Book(
@@ -281,8 +363,10 @@ async def create_book(
             description=description,
             cover_path=cover_path,
             storage_path=storage_path,
-            total_duration=int(manifest["totalDuration"]),
+            total_duration=int(total_duration),
             total_segments=total_segments,
+            book_type=book_type,  # 新增字段
+            epub_structure=epub_structure_json,  # 新增字段
         )
         db.add(book)
         await db.commit()
@@ -361,14 +445,44 @@ async def get_manifest(
         settings.MEDIA_PATH, "books", book.storage_path, "manifest.json"
     )
     
-    if not os.path.exists(manifest_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="章节清单不存在"
-        )
+    # 如果 manifest.json 存在，直接返回 (TXT书籍)
+    if os.path.exists(manifest_path):
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+            
+    # 如果不存在，检查是否为 EPUB 书籍并尝试读取 epub_manifest.json
+    epub_manifest_path = os.path.join(
+        settings.MEDIA_PATH, "books", book.storage_path, "epub_manifest.json"
+    )
     
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if os.path.exists(epub_manifest_path):
+        with open(epub_manifest_path, "r", encoding="utf-8") as f:
+            epub_data = json.load(f)
+            
+        # 转换为 TXT manifest 格式
+        # TXT manifest: {"type": "txt", "chapters": [{"id": "...", "duration": ...}], "totalDuration": ...}
+        chapters = []
+        total_duration = 0
+        
+        for ch in epub_data.get('chapters', []):
+            duration = ch.get('duration', 0)
+            chapters.append({
+                "id": ch['id'],
+                "duration": duration,
+                "title": ch.get('title', f"Chapter {ch['id']}")
+            })
+            total_duration += duration
+            
+        return {
+            "type": "epub_compatible",
+            "chapters": chapters,
+            "totalDuration": round(total_duration, 2)
+        }
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="章节清单不存在"
+    )
 
 
 @router.get("/{book_id}/chapters/{chapter_id}/audio", summary="获取章节音频")
@@ -389,15 +503,19 @@ async def get_chapter_audio(
             detail="书籍不存在"
         )
     
-    audio_path = os.path.join(
-        settings.MEDIA_PATH, "books", book.storage_path, f"{chapter_id}_audio.mp3"
-    )
+    base_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
+    audio_path = os.path.join(base_path, f"{chapter_id}_audio.mp3")
     
     if not os.path.exists(audio_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="章节音频不存在"
-        )
+        # 尝试带 ch 前缀的新格式
+        fallback_path = os.path.join(base_path, f"ch{chapter_id}_audio.mp3")
+        if os.path.exists(fallback_path):
+            audio_path = fallback_path
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="章节音频不存在"
+            )
     
     
     # 关键修复：支持 HTTP Range requests，允许浏览器 seek 到任意位置
@@ -485,15 +603,24 @@ async def get_chapter_text(
     )
     
     if not os.path.exists(text_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="章节文本不存在"
+        # 尝试带 ch 前缀的新格式
+        fallback_path = os.path.join(
+            settings.MEDIA_PATH, "books", book.storage_path, f"ch{chapter_id}_text.txt"
         )
+        if os.path.exists(fallback_path):
+            text_path = fallback_path
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="章节文本不存在"
+            )
     
     with open(text_path, "r", encoding="utf-8") as f:
         content = f.read()
     
     return Response(content=content, media_type="text/plain; charset=utf-8")
+
+
 
 
 @router.get("/{book_id}/chapters/{chapter_id}/alignment", summary="获取章节对齐数据")
@@ -513,18 +640,202 @@ async def get_chapter_alignment(
             detail="书籍不存在"
         )
     
-    align_path = os.path.join(
-        settings.MEDIA_PATH, "books", book.storage_path, f"{chapter_id}_align.json"
-    )
+    base_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
+    align_path = os.path.join(base_path, f"{chapter_id}_align.json")
     
     if not os.path.exists(align_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="章节对齐数据不存在"
-        )
+        # 尝试带 ch 前缀的新格式
+        fallback_path = os.path.join(base_path, f"ch{chapter_id}_align.json")
+        if os.path.exists(fallback_path):
+            align_path = fallback_path
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="章节对齐数据不存在"
+            )
     
     with open(align_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+@router.get("/{book_id}/epub/manifest", summary="获取 EPUB manifest (方案2)")
+async def get_epub_manifest(
+    book_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取 EPUB 书籍的 manifest（方案2专用）"""
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在"
+        )
+    
+    if book.book_type != "epub":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="此书籍不是 EPUB 格式"
+        )
+    
+    epub_manifest_path = os.path.join(
+        settings.MEDIA_PATH, "books", book.storage_path, "epub_manifest.json"
+    )
+    
+    if not os.path.exists(epub_manifest_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="EPUB manifest 不存在"
+        )
+    
+    with open(epub_manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+from fastapi import Cookie, Query
+from app.utils.security import decode_token
+
+@router.get("/{book_id}/epub_content/{file_path:path}", summary="获取 EPUB 内容文件")
+async def get_epub_content(
+    book_id: uuid.UUID,
+    file_path: str,
+    token_query: Optional[str] = Query(None, alias="token"),
+    token_cookie: Optional[str] = Cookie(None, alias="access_token"),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取 EPUB 的静态资源文件 (HTML/Images/CSS)"""
+    # 验证 Token (支持 Query Param 或 Cookie)
+    token = token_query or token_cookie
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="需要认证"
+        )
+        
+    user_id = decode_token(token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭据"
+        )
+        
+    # 验证书籍权限 (简化: 只要登录即可，或者检查 owner)
+    # result = await db.execute(select(Book).where(Book.id == book_id, Book.owner_id == user_id)) ...
+    # 为了兼容共享逻辑，这里暂时只查书籍是否存在。严格逻辑应该查 owner_id == user_id
+    
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在"
+        )
+        
+    # 鉴权: 检查当前用户是否是书籍拥有者
+    if str(book.owner_id) != user_id:
+         raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权访问该书籍"
+        )
+
+    # 构建文件完整路径
+    # books/{storage_path}/epub/{file_path}
+    base_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path, "epub")
+    full_path = os.path.join(base_path, file_path)
+    
+    # 安全检查：防止目录遍历攻击
+    if not os.path.abspath(full_path).startswith(os.path.abspath(base_path)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="非法的文件访问路径"
+        )
+    
+    if not os.path.exists(full_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="文件不存在"
+        )
+        
+    # 根据扩展名猜测 MIME type
+    media_type = "application/octet-stream"
+    lower_path = full_path.lower()
+    if lower_path.endswith(('.html', '.xhtml', '.htm')):
+        media_type = "text/html"
+    elif lower_path.endswith('.css'):
+        media_type = "text/css"
+    elif lower_path.endswith(('.jpg', '.jpeg')):
+        media_type = "image/jpeg"
+    elif lower_path.endswith('.png'):
+        media_type = "image/png"
+    elif lower_path.endswith('.gif'):
+        media_type = "image/gif"
+    elif lower_path.endswith('.svg'):
+        media_type = "image/svg+xml"
+    elif lower_path.endswith('.js'):
+        media_type = "application/javascript"
+    
+    return FileResponse(full_path, media_type=media_type)
+
+
+@router.get("/{book_id}/epub/chapters/{chapter_file:path}", summary="获取 EPUB 章节 HTML (方案2)")
+async def get_epub_chapter_html(
+    book_id: uuid.UUID,
+    chapter_file: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取 EPUB 书籍的章节 HTML 文件（方案2专用）
+    
+    chapter_file: EPUB 章节文件的相对路径，例如 "OEBPS/Text/chapter01.xhtml"
+    """
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在"
+        )
+    
+    if book.book_type != "epub":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="此书籍不是 EPUB 格式"
+        )
+    
+    # 构建 EPUB 章节文件路径
+    # 文件在 {storage_path}/epub/{chapter_file}
+    chapter_path = os.path.join(
+        settings.MEDIA_PATH, "books", book.storage_path, "epub", chapter_file
+    )
+    
+    # 安全检查：确保路径在书籍目录内
+    book_dir = os.path.join(settings.MEDIA_PATH, "books", book.storage_path, "epub")
+    if not os.path.abspath(chapter_path).startswith(os.path.abspath(book_dir)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="非法的文件路径"
+        )
+    
+    if not os.path.exists(chapter_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"章节文件不存在: {chapter_file}"
+        )
+    
+    # 读取 HTML 内容
+    with open(chapter_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    
+    return Response(
+        content=html_content,
+        media_type="text/html; charset=utf-8"
+    )
+
 
 
 @router.get("/{book_id}/progress", response_model=BookProgressResponse, summary="获取阅读进度")

@@ -27,9 +27,12 @@ config = context.config
 def get_sync_url():
     """将 asyncpg URL 转换为 psycopg2 URL"""
     url = settings.DATABASE_URL
-    # 替换 asyncpg 为 psycopg2（或移除驱动让 SQLAlchemy 自动选择）
+    # 替换 asyncpg 为 psycopg2
     if '+asyncpg' in url:
-        url = url.replace('+asyncpg', '')
+        url = url.replace('+asyncpg', '+psycopg2')
+    elif 'postgresql://' in url and '+' not in url:
+        # 如果是普通 postgresql:// URL，添加 psycopg2 驱动
+        url = url.replace('postgresql://', 'postgresql+psycopg2://')
     return url
 
 # 设置数据库 URL（同步版本）

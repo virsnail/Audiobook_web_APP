@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Json
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, List
@@ -22,6 +22,8 @@ class BookResponse(BookBase):
     total_segments: Optional[int] = None
     is_public: bool
     created_at: datetime
+    book_type: Optional[str] = "txt"
+    epub_structure: Optional[Json] = None
     
     class Config:
         from_attributes = True
