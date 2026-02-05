@@ -47,6 +47,13 @@
     return gradients[index % gradients.length];
   }
 
+  // 根据书籍类型获取阅读器路由
+  function getReaderRoute(book: Book): string {
+    // 默认全部跳转到通用阅读器 (支持 TXT 和 兼容模式 EPUB)
+    // 用户可以在阅读器内部切换到 EPUB 专用视图
+    return `/reader/${book.id}`;
+  }
+
   // 加载书籍列表
   async function loadBooks() {
     if (!authStore.isLoggedIn) {
@@ -258,7 +265,7 @@
             class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
           >
             <!-- 封面 -->
-            <a href="/reader/{book.id}" class="block">
+            <a href={getReaderRoute(book)} class="block">
               <div
                 class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
                 style="background-image: {getBookCover(book, i)}"
@@ -285,7 +292,7 @@
               <!-- 操作按钮 -->
               <div class="mt-3 flex items-center justify-between">
                 <a
-                  href="/reader/{book.id}"
+                  href={getReaderRoute(book)}
                   class="flex items-center text-blue-600 text-sm font-medium"
                 >
                   <span>开始阅读</span>

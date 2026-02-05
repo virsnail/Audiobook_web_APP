@@ -308,6 +308,15 @@
       </button>
     </div>
 
+    <!-- 切换到 EPUB 模式按钮 -->
+    <a
+      href="/epub-reader/{data.bookId}"
+      class="px-3 py-1.5 rounded-lg bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-800 dark:text-green-200 text-sm font-medium transition-colors"
+      title="切换到 EPUB 阅读器"
+    >
+      📖 EPUB
+    </a>
+
     <!-- 全书进度 -->
     <div
       class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap min-w-[3em] text-right"
