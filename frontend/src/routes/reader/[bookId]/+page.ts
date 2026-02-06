@@ -24,15 +24,7 @@ export const load = async ({ params, fetch }: LoadParams) => {
   const headers = authStore.getAuthHeader();
 
   try {
-    // 1. 加载 manifest（章节目录）
-    const manifestUrl = `${basePath}/manifest`; // API endpoint, not static file
-    const manifestRes = await fetch(manifestUrl, { headers });
-    if (!manifestRes.ok) {
-      throw new Error(`Failed to load manifest from ${manifestUrl}`);
-    }
-    const manifest: BookManifest = await manifestRes.json();
-    
-    // 获取书籍标题和处理状态
+    // 1. 先获取书籍信息，检查处理状态
     let bookTitle = '未命名书籍';
     let processingStatus = 'ready';
     let processingError = '';
@@ -45,16 +37,20 @@ export const load = async ({ params, fetch }: LoadParams) => {
           bookTitle = bookInfo.title || bookId;
           processingStatus = bookInfo.processing_status || 'ready';
           processingError = bookInfo.processing_error || '';
+        } else if (bookInfoRes.status === 404) {
+           throw new Error("书籍不存在 / Book not found");
         }
-      } catch {
-        bookTitle = bookId;
+      } catch (e) {
+        console.error("Failed to fetch book info:", e);
+        // 如果获取书籍信息失败，假设是现成的（可能是旧数据或网络问题），尝试继续加载 manifest
+        processingStatus = 'ready'; 
       }
     } else {
-      bookTitle = '网络国家';
+       bookTitle = 'Demo Book';
     }
-    
-    // 如果书籍还在处理中，直接返回处理状态
-    if (processingStatus !== 'ready') {
+
+    // 如果书籍还在处理中或失败，直接返回状态，不加载 manifest
+    if (processingStatus === 'processing' || processingStatus === 'pending' || processingStatus === 'failed') {
       return {
         bookId,
         manifest: { chapters: [], totalDuration: 0 },
@@ -69,11 +65,33 @@ export const load = async ({ params, fetch }: LoadParams) => {
         processingError,
       };
     }
+
+    // 2. 加载 manifest（章节目录）
+    // 只有当状态是 ready/completed 时才尝试加载
+    const manifestUrl = `${basePath}/manifest`;
+    const manifestRes = await fetch(manifestUrl, { headers });
+    if (!manifestRes.ok) {
+      // 如果 manifest 不存在，但状态显示 ready，可能是个错误
+      if (manifestRes.status === 404) {
+          // Double check status or consider it a failure requiring admin attention
+          console.error(`Manifest 404 for book ${bookId}`);
+          return {
+            bookId,
+            manifest: { chapters: [], totalDuration: 0 },
+            basePath,
+            firstChapter: { id: '', textContent: '', segments: [] },
+            bookTitle,
+            processingStatus: 'missing_manifest', // 自定义状态用于前端显示
+            processingError: 'Manifest file missing. Please contact admin.',
+          };
+      }
+      throw new Error(`Failed to load manifest from ${manifestUrl}`);
+    }
+    const manifest: BookManifest = await manifestRes.json();
     
-    // 2. 加载第一章的内容
+    // 3. 加载第一章的内容
     const firstChapterId = manifest.chapters[0]?.id || 'ch001';
     
-    // Construct API URLs
     const textUrl = `${basePath}/chapters/${firstChapterId}/text`;
     const alignUrl = `${basePath}/chapters/${firstChapterId}/alignment`;
     
@@ -89,14 +107,13 @@ export const load = async ({ params, fetch }: LoadParams) => {
       bookId,
       manifest,
       basePath,
-      // 第一章预加载数据
       firstChapter: {
         id: firstChapterId,
         textContent: firstChapterText,
         segments: firstChapterSegments,
       },
       bookTitle,
-      processingStatus: 'ready',
+      processingStatus: 'ready', 
       processingError: '',
     };
   } catch (error) {
@@ -107,12 +124,12 @@ export const load = async ({ params, fetch }: LoadParams) => {
       basePath,
       firstChapter: {
         id: 'ch001',
-        textContent: '加载失败\n\n请检查文件是否存在。',
+        textContent: '加载失败 / Load Failed\n\n请检查网络或刷新重试。 Please check network or retry.',
         segments: [],
       },
       bookTitle: '加载失败',
-      processingStatus: 'ready',
-      processingError: '',
+      processingStatus: 'error',
+      processingError: error instanceof Error ? error.message : String(error),
     };
   }
 };

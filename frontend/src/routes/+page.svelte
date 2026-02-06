@@ -5,7 +5,14 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth.svelte";
-  import { getBooks, deleteBook, shareBook, type Book } from "$lib/utils/api";
+  import {
+    getBooks,
+    deleteBook,
+    shareBook,
+    getBookShares,
+    unshareBook,
+    type Book,
+  } from "$lib/utils/api";
 
   // 书籍列表
   let books = $state<Book[]>([]);
@@ -18,6 +25,18 @@
   let shareEmail = $state("");
   let shareLoading = $state(false);
   let shareError = $state("");
+
+  // 分享状态
+  let shareStatus = $state<{
+    is_public: boolean;
+    shared_users: Array<{
+      email: string;
+      nickname: string;
+      shared_at: string | null;
+    }>;
+    total_shares: number;
+  } | null>(null);
+  let shareStatusLoading = $state(false);
 
   // 示例书籍（保留供参考，当前未使用）
   const sampleBooks = [
@@ -54,6 +73,30 @@
     return `/reader/${book.id}`;
   }
 
+  // 处理书籍点击 - 检查处理状态
+  function handleBookClick(book: Book, event: MouseEvent) {
+    // 检查书籍是否正在处理中
+    if (book.processing_status === "processing") {
+      event.preventDefault();
+      alert(
+        "书籍数据准备还在进行中，请稍后再试。\nBook data is still being processed, please try again later.",
+      );
+      return;
+    }
+
+    // 检查书籍是否处理失败
+    if (book.processing_status === "failed") {
+      event.preventDefault();
+      alert(
+        "书籍生成失败，请重新上传或联系管理员。\nBook generation failed, please re-upload or contact administrator.",
+      );
+      return;
+    }
+
+    // 状态正常，允许跳转
+    goto(getReaderRoute(book));
+  }
+
   // 加载书籍列表
   async function loadBooks() {
     if (!authStore.isLoggedIn) {
@@ -84,11 +127,27 @@
   }
 
   // 打开分享对话框
-  function openShareDialog(bookId: string) {
+  async function openShareDialog(bookId: string) {
     shareBookId = bookId;
     shareEmail = "";
     shareError = "";
+    shareStatus = null;
     showShareDialog = true;
+
+    // 加载分享状态
+    await loadShareStatus(bookId);
+  }
+
+  // 加载分享状态
+  async function loadShareStatus(bookId: string) {
+    shareStatusLoading = true;
+    try {
+      shareStatus = await getBookShares(bookId);
+    } catch (err) {
+      console.error("Failed to load share status:", err);
+    } finally {
+      shareStatusLoading = false;
+    }
   }
 
   // 分享书籍
@@ -106,10 +165,33 @@
         }
         await shareBook(shareBookId, shareEmail);
       }
-      showShareDialog = false;
-      alert("分享成功！");
+
+      // 分享成功，重新加载状态
+      await loadShareStatus(shareBookId);
+      shareEmail = ""; // 清空输入框
     } catch (err) {
       shareError = err instanceof Error ? err.message : "分享失败";
+    } finally {
+      shareLoading = false;
+    }
+  }
+
+  // 取消所有分享
+  async function handleUnshare() {
+    if (
+      !confirm(
+        "确定要取消所有分享吗？\nAre you sure you want to cancel all shares?",
+      )
+    )
+      return;
+
+    shareLoading = true;
+    try {
+      await unshareBook(shareBookId);
+      // 重新加载状态
+      await loadShareStatus(shareBookId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "取消分享失败");
     } finally {
       shareLoading = false;
     }
@@ -265,7 +347,10 @@
             class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
           >
             <!-- 封面 -->
-            <a href={getReaderRoute(book)} class="block relative">
+            <div
+              onclick={(e) => handleBookClick(book, e)}
+              class="block relative cursor-pointer"
+            >
               <div
                 class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
                 style="background-image: {getBookCover(book, i)}"
@@ -295,7 +380,7 @@
                   {/if}
                 </div>
               </div>
-            </a>
+            </div>
 
             <!-- 信息和操作 -->
             <div class="p-4">
@@ -305,9 +390,9 @@
 
               <!-- 操作按钮 -->
               <div class="mt-3 flex items-center justify-between">
-                <a
-                  href={getReaderRoute(book)}
-                  class="flex items-center text-blue-600 text-sm font-medium"
+                <button
+                  onclick={(e) => handleBookClick(book, e)}
+                  class="flex items-center text-blue-600 text-sm font-medium hover:text-blue-700 transition-colors"
                 >
                   <span>开始阅读 Read</span>
                   <svg
@@ -323,7 +408,7 @@
                       d="M9 5l7 7-7 7"
                     />
                   </svg>
-                </a>
+                </button>
 
                 <div class="flex items-center gap-2">
                   <!-- 分享按钮 -->
@@ -539,6 +624,67 @@
   >
     <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
       <h3 class="text-xl font-bold text-gray-900 mb-4">分享书籍 Share Book</h3>
+
+      <!-- 当前分享状态 -->
+      {#if shareStatusLoading}
+        <div class="mb-4 p-4 bg-gray-50 rounded-xl">
+          <p class="text-sm text-gray-500">加载中... Loading...</p>
+        </div>
+      {:else if shareStatus}
+        <div class="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+          <h4 class="font-medium text-gray-800 mb-3">
+            当前分享状态 Current Share Status
+          </h4>
+
+          <!-- 公开分享状态 -->
+          <div class="mb-3 flex items-center">
+            <span class="text-sm font-medium text-gray-700 mr-2">
+              公开分享 Public Share:
+            </span>
+            {#if shareStatus.is_public}
+              <span class="text-green-600 font-medium">✓ 已公开 Public</span>
+            {:else}
+              <span class="text-gray-500">✗ 未公开 Not Public</span>
+            {/if}
+          </div>
+
+          <!-- 分享用户列表 -->
+          {#if shareStatus.shared_users && shareStatus.shared_users.length > 0}
+            <div>
+              <p class="text-sm font-medium text-gray-700 mb-2">
+                已分享给 Shared with ({shareStatus.total_shares}):
+              </p>
+              <div class="space-y-1 max-h-32 overflow-y-auto">
+                {#each shareStatus.shared_users as user}
+                  <div class="text-sm text-gray-600 bg-white px-2 py-1 rounded">
+                    • {user.email}
+                    {#if user.nickname}
+                      ({user.nickname})
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {:else if !shareStatus.is_public}
+            <p class="text-sm text-gray-500">尚未分享 Not shared yet</p>
+          {/if}
+
+          <!-- 取消所有分享按钮 -->
+          {#if shareStatus.is_public || shareStatus.total_shares > 0}
+            <button
+              onclick={handleUnshare}
+              disabled={shareLoading}
+              class="w-full mt-3 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 disabled:opacity-50 text-sm font-medium"
+            >
+              🗑️ 取消所有分享 Cancel All Shares
+            </button>
+          {/if}
+        </div>
+
+        <div class="mb-3 text-center text-gray-500 text-sm">
+          添加新分享 Add New Share
+        </div>
+      {/if}
 
       <!-- 分享给指定用户 -->
       <div class="mb-4">

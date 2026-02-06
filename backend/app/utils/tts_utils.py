@@ -64,6 +64,91 @@ class TokenAnalyzer:
         }
 
 
+class MarkdownCleaner:
+    """Markdown 内容清洗器"""
+    
+    @staticmethod
+    def md_to_txt(md_content: str) -> str:
+        """
+        将 Markdown 内容转换为纯文本
+        
+        功能：
+        - 移除代码块、链接、图片、HTML标签
+        - 移除 Markdown 格式标记（标题#、粗体**、斜体*）
+        - 移除列表标记、引用、表格
+        - 清理多余空行
+        - 如果输入已经是纯文本，不会出错
+        """
+        text = md_content
+        
+        # 移除代码块
+        text = re.sub(r'```[\s\S]*?```', '', text)
+        text = re.sub(r'`[^`]+`', '', text)
+        
+        # 移除链接但保留文本 [text](url) -> text
+        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+        
+        # 移除图片 ![alt](url)
+        text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', '', text)
+        
+        # 移除HTML标签
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # 移除Markdown标题标记 (# ## ###) - 允许行首空格
+        text = re.sub(r'^\s*#{1,6}\s+', '', text, flags=re.MULTILINE)
+        
+        # 移除水平线 (---, ***, ___, ===) - 允许行首/行尾空格
+        text = re.sub(r'^\s*[-=_*—]{3,}\s*$', '', text, flags=re.MULTILINE)
+        
+        # 移除列表标记 (*, -, +, 1.) - 允许行首空格
+        text = re.sub(r'^\s*[\*\-\+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # 移除引用标记 (>)
+        text = re.sub(r'^\s*>\s+', '', text, flags=re.MULTILINE)
+        
+        # 移除粗体和斜体 (*** ** * ___ __ _) - 使用非贪婪匹配
+        # 这里使用简单循环来确保移除干净（例如嵌套情况）
+        for _ in range(2):
+            text = re.sub(r'\*\*\*([^\n]+?)\*\*\*', r'\1', text)
+            text = re.sub(r'\*\*([^\n]+?)\*\*', r'\1', text)
+            text = re.sub(r'\*([^\n]+?)\*', r'\1', text)
+            text = re.sub(r'___([^\n]+?)___', r'\1', text)
+            text = re.sub(r'__([^\n]+?)__', r'\1', text)
+            text = re.sub(r'_([^\n]+?)_', r'\1', text)
+        
+        # 移除表格 (|xxx|xxx|)
+        text = re.sub(r'\|[^\n]+\|', '', text)
+        
+        # 清理多余空行 (3个或更多连续换行 -> 2个换行)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        # 删除所有完全空白的行
+        text = re.sub(r'^\s*$\n', '', text, flags=re.MULTILINE)
+        
+        return text.strip()
+
+    @staticmethod
+    def clean_copyright_text(text: str) -> str:
+        """
+        从文本中提取引号中的内容（如以 protected by copyright. 结尾时）
+        并处理 Kindle Edition 后缀
+        """
+        # 处理版权保护信息
+        if re.search(r'protected by copyright\.\s*$', text) or re.search(r'受版权保护。\s*$', text):
+            match = re.search(r'[""\u201c](.*?)[""\u201d]', text, re.DOTALL)
+            if match:
+                text = match.group(1).strip()
+        
+        # 新增功能：如果最后一行以 "Kindle Edition." 结尾，删除最后一行
+        if re.search(r'Kindle Edition\.\s*$', text):
+            lines = text.split('\n')
+            if len(lines) > 1:
+                text = '\n'.join(lines[:-1])
+                
+        return text
+
+
 def split_text_by_minutes(text: str, max_minutes: float = TTSConfig.MAX_MINUTES_PER_SEGMENT) -> List[str]:
     """按预估时长拆分文本"""
     analysis = TokenAnalyzer.analyze_text(text)

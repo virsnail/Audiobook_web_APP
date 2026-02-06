@@ -193,6 +193,32 @@ export async function shareBook(
   });
 }
 
+// 获取书籍分享状态
+export async function getBookShares(
+  bookId: string
+): Promise<{
+  is_public: boolean;
+  shared_users: Array<{
+    email: string;
+    nickname: string;
+    shared_at: string | null;
+  }>;
+  total_shares: number;
+}> {
+  return request(`/books/${bookId}/shares`, {
+    method: 'GET',
+  });
+}
+
+// 取消所有分享
+export async function unshareBook(
+  bookId: string
+): Promise<{ message: string; deleted_shares: number }> {
+  return request(`/books/${bookId}/shares`, {
+    method: 'DELETE',
+  });
+}
+
 // 保存阅读进度
 export async function saveProgress(
   bookId: string,
