@@ -265,11 +265,25 @@
             class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
           >
             <!-- 封面 -->
-            <a href={getReaderRoute(book)} class="block">
+            <a href={getReaderRoute(book)} class="block relative">
               <div
                 class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
                 style="background-image: {getBookCover(book, i)}"
               >
+                <!-- 处理状态标识 -->
+                {#if book.processing_status === "processing"}
+                  <div
+                    class="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded-full font-medium shadow-lg animate-pulse"
+                  >
+                    ⏳ 生成中...
+                  </div>
+                {:else if book.processing_status === "failed"}
+                  <div
+                    class="absolute top-2 left-2 px-2 py-1 bg-red-500 text-white text-xs rounded-full font-medium shadow-lg"
+                  >
+                    ❌ 生成失败
+                  </div>
+                {/if}
                 <div class="w-full">
                   <h2
                     class="text-xl font-bold text-white drop-shadow-lg line-clamp-2"

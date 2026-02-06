@@ -23,6 +23,8 @@ class Book(Base):
     is_public = Column(Boolean, default=False)  # 是否公开给所有用户
     book_type = Column(String(20), default="txt")  # "txt" 或 "epub" (方案2)
     epub_structure = Column(Text, nullable=True)  # EPUB 结构数据 (JSON 字符串，仅方案2使用)
+    processing_status = Column(String(20), default="ready")  # "ready", "processing", "failed"
+    processing_error = Column(Text, nullable=True)  # 失败时的错误信息
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

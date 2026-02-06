@@ -32,20 +32,42 @@ export const load = async ({ params, fetch }: LoadParams) => {
     }
     const manifest: BookManifest = await manifestRes.json();
     
-    // 获取书籍标题
+    // 获取书籍标题和处理状态
     let bookTitle = '未命名书籍';
+    let processingStatus = 'ready';
+    let processingError = '';
+    
     if (!isDev) {
       try {
         const bookInfoRes = await fetch(`/api/books/${bookId}`, { headers });
         if (bookInfoRes.ok) {
           const bookInfo = await bookInfoRes.json();
           bookTitle = bookInfo.title || bookId;
+          processingStatus = bookInfo.processing_status || 'ready';
+          processingError = bookInfo.processing_error || '';
         }
       } catch {
         bookTitle = bookId;
       }
     } else {
       bookTitle = '网络国家';
+    }
+    
+    // 如果书籍还在处理中，直接返回处理状态
+    if (processingStatus !== 'ready') {
+      return {
+        bookId,
+        manifest: { chapters: [], totalDuration: 0 },
+        basePath,
+        firstChapter: {
+          id: 'ch001',
+          textContent: '',
+          segments: [],
+        },
+        bookTitle,
+        processingStatus,
+        processingError,
+      };
     }
     
     // 2. 加载第一章的内容
@@ -74,6 +96,8 @@ export const load = async ({ params, fetch }: LoadParams) => {
         segments: firstChapterSegments,
       },
       bookTitle,
+      processingStatus: 'ready',
+      processingError: '',
     };
   } catch (error) {
     console.error('加载书籍数据失败:', error);
@@ -87,6 +111,8 @@ export const load = async ({ params, fetch }: LoadParams) => {
         segments: [],
       },
       bookTitle: '加载失败',
+      processingStatus: 'ready',
+      processingError: '',
     };
   }
 };
