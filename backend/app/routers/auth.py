@@ -4,17 +4,20 @@ import string
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
 from app.models.user import User, InvitationCode, EmailVerification
-from app.schemas.auth import Token, EmailCodeRequest, RegisterRequest
+from app.schemas.auth import Token, EmailCodeRequest, RegisterRequest, ChangePasswordRequest
 from app.schemas.user import UserLogin, UserResponse
 from app.utils.security import verify_password, get_password_hash, create_access_token
 from app.utils.deps import get_current_user
+from app.utils.deps import get_current_user
 from app.config import settings
+from app.services.activity_logger import ActivityLogger
+from app.database import AsyncSessionLocal
 
 router = APIRouter()
 
@@ -147,6 +150,8 @@ async def register(
 @router.post("/login", response_model=Token, summary="用户登录")
 async def login(
     request: UserLogin,
+    background_tasks: BackgroundTasks,
+    request_obj: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """用户登录"""
@@ -166,8 +171,38 @@ async def login(
         )
     
     access_token = create_access_token(str(user.id))
+    
+    # 记录登录活动
+    background_tasks.add_task(
+        ActivityLogger.log_activity_background,
+        AsyncSessionLocal,
+        str(user.id),
+        "LOGIN",
+        None,
+        {"email": user.email},
+        request_obj.headers.get("user-agent")
+    )
+    
     return Token(access_token=access_token)
 
+
+@router.post("/logout", summary="用户退出")
+async def logout(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """用户退出登录（记录日志）"""
+    background_tasks.add_task(
+        ActivityLogger.log_activity_background,
+        AsyncSessionLocal,
+        str(current_user.id),
+        "LOGOUT",
+        None,
+        None,
+        request.headers.get("user-agent")
+    )
+    return {"message": "Logged out successfully"}
 
 @router.get("/me", response_model=UserResponse, summary="获取当前用户信息")
 async def get_me(current_user: User = Depends(get_current_user)):
@@ -200,3 +235,16 @@ async def create_invitation_codes(
     
     await db.commit()
     return {"codes": codes}
+
+
+@router.put("/change-password", summary="修改密码")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """修改当前用户密码（无需旧密码）"""
+    current_user.password_hash = get_password_hash(request.new_password)
+    await db.commit()
+    
+    return {"message": "密码修改成功"}

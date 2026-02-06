@@ -136,7 +136,9 @@ class MarkdownCleaner:
         """
         # 处理版权保护信息
         if re.search(r'protected by copyright\.\s*$', text) or re.search(r'受版权保护。\s*$', text):
-            match = re.search(r'[""\u201c](.*?)[""\u201d]', text, re.DOTALL)
+            # 使用贪婪匹配 (.*) 而非非贪婪 (.*?) 以支持嵌套引号
+            # 匹配最外层的引号内容
+            match = re.search(r'[""\u201c](.*)[""\u201d]', text, re.DOTALL)
             if match:
                 text = match.group(1).strip()
         
@@ -388,7 +390,8 @@ def get_mp3_duration(file_path: str) -> Optional[float]:
 async def process_text_to_audiobook(
     raw_text: str, 
     output_dir: str,
-    book_title: str = "Untitled"
+    book_title: str = "Untitled",
+    voice: str = TTSConfig.VOICE
 ) -> Optional[Dict]:
     """
     将纯文本转换为有声书格式
@@ -406,7 +409,7 @@ async def process_text_to_audiobook(
     chapters = split_text_by_minutes(raw_text, TTSConfig.MAX_MINUTES_PER_SEGMENT)
     
     chapters_info = []
-    voice = TTSConfig.VOICE
+    # voice 变量已通过参数传入，默认为 TTSConfig.VOICE
     
     for idx, chapter_text in enumerate(chapters, 1):
         file_prefix = f"ch{idx:03d}"
