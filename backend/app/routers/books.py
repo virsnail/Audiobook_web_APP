@@ -11,7 +11,7 @@ from mutagen.mp3 import MP3
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, delete
 
 from app.database import get_db
 from app.models.user import User
@@ -511,6 +511,37 @@ async def create_book_from_text(
     with open(raw_text_path, 'w', encoding='utf-8') as f:
         f.write(raw_text)
     
+    # Markdown 格式检测和清洗
+    # 如果包含 MD 格式标记，自动清洗；如果是纯文本，不会出错
+    from app.utils.tts_utils import MarkdownCleaner
+    
+    logger.info(f"Checking for MD markers in text of length {len(raw_text)}")
+    # 检测是否包含常见 MD 标记
+    has_md_markers = bool(
+        re.search(r'```|^#{1,6}\s|\*\*|\[.+\]\(.+\)|!\[.*\]\(.+\)', raw_text, re.MULTILINE)
+    )
+    logger.info(f"Has MD markers: {has_md_markers}")
+    
+    if has_md_markers:
+        logger.info(f"检测到 Markdown 格式，进行清洗处理")
+        try:
+            cleaned_text = MarkdownCleaner.md_to_txt(raw_text)
+            logger.info(f"Cleaned text length: {len(cleaned_text)}")
+        except Exception as e:
+            logger.error(f"Markdown cleaning failed: {e}")
+            # Fallback to raw text if cleaning fails
+            cleaned_text = raw_text
+    else:
+        # 尝试清洗版权信息（针对纯文本）
+        try:
+            logger.info("Tentatively cleaning copyright info from raw text")
+            cleaned_text = MarkdownCleaner.clean_copyright_text(raw_text)
+        except Exception as e:
+            logger.warning(f"Copyright cleaning failed: {e}")
+            cleaned_text = raw_text
+    
+    # 使用清洗后的文本进行 TTS 处理
+    
     # 创建数据库记录（状态为 processing）
     book = Book(
         id=book_id,
@@ -528,11 +559,11 @@ async def create_book_from_text(
     await db.commit()
     await db.refresh(book)
     
-    # 添加后台任务
+    # 添加后台任务（使用清洗后的文本）
     background_tasks.add_task(
         background_tts_processing,
         book_id=book_id,
-        raw_text=raw_text,
+        raw_text=cleaned_text,  # 使用清洗后的文本
         output_dir=full_path,
         book_title=title,
         db_url=str(settings.DATABASE_URL)
@@ -1211,6 +1242,91 @@ async def share_book(
         await db.commit()
         
         return {"message": "书籍已设为公开"}
+
+
+@router.get("/{book_id}/shares", summary="获取书籍分享状态")
+async def get_book_shares(
+    book_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取书籍的所有分享信息"""
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在"
+        )
+    
+    if book.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有所有者可以查看分享状态"
+        )
+    
+    # 获取所有分享给指定用户的记录
+    result = await db.execute(
+        select(BookShare, User)
+        .join(User, BookShare.shared_to == User.id)
+        .where(BookShare.book_id == book_id)
+    )
+    shares_with_users = result.all()
+    
+    shared_users = [
+        {
+            "email": user.email,
+            "nickname": user.nickname,
+            "shared_at": share.created_at.isoformat() if share.created_at else None
+        }
+        for share, user in shares_with_users
+    ]
+    
+    return {
+        "is_public": book.is_public,
+        "shared_users": shared_users,
+        "total_shares": len(shared_users)
+    }
+
+
+@router.delete("/{book_id}/shares", summary="取消所有分享")
+async def unshare_book(
+    book_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """取消书籍的所有分享（包括公开分享和指定用户分享）"""
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在"
+        )
+    
+    if book.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有所有者可以取消分享"
+        )
+    
+    # 取消公开分享
+    book.is_public = False
+    
+    # 删除所有指定用户的分享记录
+    result = await db.execute(
+        delete(BookShare).where(BookShare.book_id == book_id)
+    )
+    deleted_count = result.rowcount
+    
+    await db.commit()
+    
+    return {
+        "message": "已取消所有分享",
+        "deleted_shares": deleted_count
+    }
 
 
 @router.get("/{book_id}/cover", summary="获取书籍封面")

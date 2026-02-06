@@ -7,7 +7,7 @@
   import { uploadBook, uploadTxtBook } from "$lib/utils/api";
 
   // 上传模式: 'zip' | 'txt'
-  let uploadMode: "zip" | "txt" = $state("zip");
+  let uploadMode: "zip" | "txt" = $state("txt"); // 默认 TXT/MD 模式
 
   let title = $state("");
   let author = $state("");
@@ -17,7 +17,7 @@
   let bookZip: File | null = $state(null);
   let coverFile: File | null = $state(null);
 
-  // TXT 模式
+  // TXT/MD 模式
   let txtFile: File | null = $state(null);
   let textContent = $state("");
 
@@ -84,9 +84,10 @@
         isLoading = false;
       }
     } else {
-      // TXT 模式
+      // TXT/MD 模式
       if (!txtFile && !textContent.trim()) {
-        error = "请上传 TXT 文件或粘贴文本内容";
+        error =
+          "请上传 TXT/MD 文件或粘贴文本内容. Upload TXT/MD file or paste text content.";
         return;
       }
 
@@ -108,7 +109,7 @@
         await uploadTxtBook(formData);
         goto("/");
       } catch (err) {
-        error = err instanceof Error ? err.message : "上传失败";
+        error = err instanceof Error ? err.message : "上传失败/Upload failed";
       } finally {
         isLoading = false;
       }
@@ -214,29 +215,29 @@
           <div class="flex gap-2">
             <button
               type="button"
-              onclick={() => (uploadMode = "zip")}
-              class="flex-1 py-3 px-4 rounded-xl font-medium transition-all {uploadMode ===
-              'zip'
-                ? 'bg-blue-500 text-white shadow-lg'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
-            >
-              📦 ZIP 压缩包
-            </button>
-            <button
-              type="button"
               onclick={() => (uploadMode = "txt")}
               class="flex-1 py-3 px-4 rounded-xl font-medium transition-all {uploadMode ===
               'txt'
                 ? 'bg-green-500 text-white shadow-lg'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
             >
-              📝 TXT 文本
+              � TXT/MD 文本
+            </button>
+            <button
+              type="button"
+              onclick={() => (uploadMode = "zip")}
+              class="flex-1 py-3 px-4 rounded-xl font-medium transition-all {uploadMode ===
+              'zip'
+                ? 'bg-blue-500 text-white shadow-lg'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+            >
+              � ZIP 压缩包
             </button>
           </div>
           <p class="text-xs text-gray-400 mt-2">
             {uploadMode === "zip"
               ? "上传已准备好的有声书文件包"
-              : "TXT 将自动生成有声书（需等待处理）"}
+              : "支持 TXT/MD 格式，自动生成有声书（需等待处理）"}
           </p>
         </div>
 
@@ -326,19 +327,19 @@
             </div>
           </div>
         {:else}
-          <!-- TXT 模式 -->
+          <!-- TXT/MD 模式 -->
           <div class="space-y-4">
             <!-- TXT 文件上传 -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">
-                上传 TXT 文件 Upload TXT File
+                上传 TXT/MD 文件 Upload TXT/MD File
               </label>
               <div
                 class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-green-400 transition-colors"
               >
                 <input
                   type="file"
-                  accept=".txt"
+                  accept=".txt,.md"
                   onchange={handleTxtSelect}
                   class="hidden"
                   id="txtInput"
@@ -387,7 +388,7 @@
                     for="txtInput"
                     class="cursor-pointer text-gray-500 text-sm"
                   >
-                    点击上传 TXT 文件 Click to upload TXT
+                    点击上传 TXT/MD 文件 Click to upload TXT/MD
                   </label>
                 {/if}
               </div>

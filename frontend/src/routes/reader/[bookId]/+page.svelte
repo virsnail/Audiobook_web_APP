@@ -210,7 +210,7 @@
 </svelte:head>
 
 <!-- 处理中或失败状态显示 -->
-{#if data.processingStatus === "processing"}
+{#if data.processingStatus === "processing" || data.processingStatus === "pending"}
   <div
     class="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-100 flex items-center justify-center"
   >
@@ -240,32 +240,35 @@
           </svg>
         </div>
         <h1 class="text-xl font-bold text-gray-900 mb-2">
-          ⏳ 有声书正在生成中...
+          ⏳ 有声书正在生成中...<br />
+          <span class="text-base font-medium">Generating Audiobook...</span>
         </h1>
-        <p class="text-gray-600 mb-4">
-          服务器正在将文本转换为音频，请稍后刷新页面。
+        <p class="text-gray-600 mb-4 text-sm">
+          服务器正在将文本转换为音频，请稍后刷新页面。<br />
+          The server is converting text to audio. Please refresh later.
         </p>
-        <p class="text-sm text-gray-400 mb-6">
-          处理时间取决于文本长度，通常需要几分钟。
+        <p class="text-xs text-gray-400 mb-6">
+          处理时间取决于文本长度，通常需要几分钟。<br />
+          Processing time depends on text length, usually takes a few minutes.
         </p>
         <div class="flex gap-3 justify-center">
           <a
             href="/"
-            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
           >
-            返回书架
+            返回书架 Back
           </a>
           <button
             onclick={() => location.reload()}
-            class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
+            class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm"
           >
-            刷新页面
+            刷新页面 Refresh
           </button>
         </div>
       </div>
     </div>
   </div>
-{:else if data.processingStatus === "failed"}
+{:else if data.processingStatus === "failed" || data.processingStatus === "missing_manifest" || data.processingStatus === "error"}
   <div
     class="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center"
   >
@@ -288,16 +291,26 @@
             />
           </svg>
         </div>
-        <h1 class="text-xl font-bold text-gray-900 mb-2">❌ 有声书生成失败</h1>
-        <p class="text-gray-600 mb-4">
-          {data.processingError ||
-            "转换过程中出现错误，请重新上传或联系管理员。"}
+        <h1 class="text-xl font-bold text-gray-900 mb-2">
+          ❌ 加载失败 Load Failed
+        </h1>
+        <p class="text-gray-600 mb-4 text-sm">
+          {#if data.processingError}
+            {data.processingError}
+          {:else}
+            转换过程中出现错误，请重新上传或联系管理员。<br />
+            Error during conversion. Please re-upload or contact admin.
+          {/if}
+        </p>
+        <p class="text-xs text-gray-500 mb-6">
+          如果问题持续存在，请联系网站维护人员。<br />
+          If the issue persists, please contact the website administrator.
         </p>
         <a
           href="/"
-          class="inline-block px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+          class="inline-block px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
         >
-          返回书架
+          返回书架 Back to Bookshelf
         </a>
       </div>
     </div>
