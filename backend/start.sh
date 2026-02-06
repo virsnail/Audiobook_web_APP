@@ -11,6 +11,11 @@ pip install --upgrade edge-tts
 
 echo "✅ 依赖升级完成"
 
+# 运行数据库迁移
+echo "🔄 正在应用数据库迁移..."
+alembic upgrade head
+echo "✅ 数据库迁移完成"
+
 # 启动 FastAPI 应用
 echo "🚀 启动 FastAPI 应用..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

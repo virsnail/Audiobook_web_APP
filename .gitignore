@@ -157,3 +157,5 @@ backups/
 # 如果不想跟踪模型缓存，取消下面的注释
 # ~/.cache/whisper/
 # ~/.cache/huggingface/
+
+CLOUD_DEPLOYMENT.md

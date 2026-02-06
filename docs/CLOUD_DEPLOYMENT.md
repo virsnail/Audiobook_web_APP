@@ -1,724 +1,369 @@
-# AudioBook Reader - 云服务器部署手册
+# AudioBook Reader - 云服务器部署手册 (集成版)
 
-> **适用环境**: Oracle Cloud / AWS (Ubuntu 22.04 / Debian 12)  
-> **最后更新**: 2026-01-30
+> **适用环境**: 现有 Ubuntu 服务器 (已安装 Nginx + SSL)
+> **最后更新**: 2026-02-06
+> **说明**: 本文档专门针对将应用部署到已运行 Nginx 和 HTTPS 的现有服务器。
 
 ---
 
 ## 目录
 
-1. [服务器要求](#1-服务器要求)
-2. [服务器初始化](#2-服务器初始化)
-3. [安装 Docker](#3-安装-docker)
-4. [部署应用](#4-部署应用)
-5. [SSL 证书配置](#5-ssl-证书配置)
-6. [防火墙配置](#6-防火墙配置)
-7. [域名配置](#7-域名配置)
-8. [运维管理](#8-运维管理)
-9. [备份与恢复](#9-备份与恢复)
-10. [监控与日志](#10-监控与日志)
-11. [故障排除](#11-故障排除)
-12. [安全加固](#12-安全加固)
+1. [准备工作 (无需 Root)](#1-准备工作)
+2. [配置项目 (无需 Root)](#2-配置项目)
+3. [集成 Nginx (需要 Root)](#3-集成-nginx)
+4. [启动服务 (无需 Root)](#4-启动服务)
+5. [运维命令 (无需 Root)](#5-运维命令)
+
+> **权限说明**: 文档中所有 `sudo` 开头的命令需要 Root 权限，其他命令建议使用普通用户执行。
 
 ---
 
-## 1. 服务器要求
+## 1. 准备工作
 
-### 1.1 推荐配置
+### 1.1 确认环境
 
-| 配置项 | 最低要求     | 推荐配置                 |
-| ------ | ------------ | ------------------------ |
-| CPU    | 2 核         | 4 核+                    |
-| 内存   | 4 GB         | 8 GB+                    |
-| 存储   | 50 GB SSD    | 100 GB+ SSD              |
-| 带宽   | 100 Mbps     | 1 Gbps                   |
-| 系统   | Ubuntu 22.04 | Ubuntu 22.04 / Debian 12 |
-
-### 1.2 云服务商选择
-
-| 服务商       | 推荐实例            | 月费用 | 备注               |
-| ------------ | ------------------- | ------ | ------------------ |
-| Oracle Cloud | VM.Standard.A1.Flex | 免费   | ARM 架构，永久免费 |
-| AWS          | t3.medium           | ~$30   | x86 架构           |
-| Vultr        | High Frequency      | ~$12   | 高性能             |
-| DigitalOcean | Droplet 4GB         | ~$24   | 简单易用           |
-
----
-
-## 2. 服务器初始化
-
-### 2.1 SSH 连接服务器
+确保服务器已安装 Docker 和 Docker Compose。
 
 ```bash
-# 本地机器执行
-ssh -i ~/.ssh/your_key.pem ubuntu@YOUR_SERVER_IP
-```
-
-### 2.2 系统更新
-
-```bash
-# 更新软件包列表
-sudo apt update
-
-# 升级系统
-sudo apt upgrade -y
-
-# 安装必要工具
-sudo apt install -y \
-    curl \
-    wget \
-    git \
-    vim \
-    htop \
-    ufw \
-    fail2ban \
-    unzip \
-    ca-certificates \
-    gnupg \
-    lsb-release
-```
-
-### 2.3 创建部署用户（推荐）
-
-```bash
-# 创建用户
-sudo adduser deploy
-
-# 添加到 sudo 组
-sudo usermod -aG sudo deploy
-
-# 添加到 docker 组（稍后安装 Docker 后）
-# sudo usermod -aG docker deploy
-
-# 配置 SSH 密钥
-sudo mkdir -p /home/deploy/.ssh
-sudo cp ~/.ssh/authorized_keys /home/deploy/.ssh/
-sudo chown -R deploy:deploy /home/deploy/.ssh
-sudo chmod 700 /home/deploy/.ssh
-sudo chmod 600 /home/deploy/.ssh/authorized_keys
-
-# 切换到 deploy 用户
-su - deploy
-```
-
-### 2.4 设置时区
-
-```bash
-sudo timedatectl set-timezone America/Los_Angeles
-# 或 Asia/Shanghai
-```
-
----
-
-## 3. 安装 Docker
-
-### 3.1 安装 Docker Engine
-
-```bash
-# 添加 Docker 官方 GPG 密钥
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-# 添加软件源
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# 安装 Docker
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# 验证安装
-docker --version
 docker compose version
+# 如果未安装，请先安装 Docker
 ```
 
-### 3.2 配置 Docker 权限
-
-```bash
-# 将当前用户添加到 docker 组
-sudo usermod -aG docker $USER
-
-# 重新登录以生效
-exit
-ssh -i ~/.ssh/your_key.pem deploy@YOUR_SERVER_IP
-
-# 验证无需 sudo
-docker ps
-```
-
-### 3.3 配置 Docker 日志限制
-
-```bash
-# 创建 Docker 守护进程配置
-sudo vim /etc/docker/daemon.json
-```
-
-添加以下内容:
-
-```json
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  }
-}
-```
-
-```bash
-# 重启 Docker
-sudo systemctl restart docker
-```
-
----
-
-## 4. 部署应用
-
-### 4.1 克隆项目
+### 1.2 克隆项目
 
 ```bash
 # 创建项目目录
 mkdir -p ~/apps
 cd ~/apps
 
-# 克隆项目
+# 克隆项目 (替换为你的实际仓库地址)
 git clone https://github.com/YOUR_USERNAME/Audiobook_web_APP.git
 cd Audiobook_web_APP
 ```
 
-### 4.2 配置环境变量
+### 1.3 创建数据目录
 
 ```bash
-# 从模板创建配置
-cp .env.example .env
+mkdir -p media/books
+mkdir -p pgdata
+mkdir -p logs
+```
 
-# 编辑配置
+---
+
+## 2. 配置项目
+
+### 2.1 配置环境变量 (.env)
+
+创建并编辑 `.env` 文件：
+
+```bash
+cp .env.example .env
 vim .env
 ```
 
-**重要配置项**:
+**关键配置项 (请务必修改)**：
 
-```bash
-# 数据库（使用强密码！）
+我们将在 Docker 内部运行一个 Nginx，监听本地端口 **8123** (避免占用主服务器的 80/443)，然后配置主服务器的 Nginx 转发流量过去。
+
+```ini
+# ========== 端口配置 ==========
+# 核心设置：将 Docker 内部 Nginx 映射到本地 8123 端口
+HTTP_PORT=8123
+# HTTPS 端口留空或随意，因为我们使用主服务器处理 SSL
+HTTPS_PORT=8443
+
+# ========== 数据库 ==========
 DB_USER=audiobook
 DB_PASSWORD=YOUR_STRONG_PASSWORD_HERE
 DB_NAME=audiobook
 
-# 安全密钥（生成方式：openssl rand -hex 32）
-SECRET_KEY=YOUR_64_CHAR_HEX_STRING
+# ========== 安全 ==========
+# 生成方式：openssl rand -hex 32
+SECRET_KEY=YOUR_GENERATED_SECRET_KEY
 
-# 域名
-DOMAIN=your-domain.com
-CORS_ORIGINS=https://your-domain.com
-PUBLIC_API_URL=https://your-domain.com/api
+# ========== 域名 ==========
+DOMAIN=strollunreal.com
+CORS_ORIGINS=https://strollunreal.com
+PUBLIC_API_URL=https://strollunreal.com/api
 
-# 邮件（推荐 Mailgun 或 SendGrid）
+# ========== 邮件服务 (可选) ==========
 SMTP_HOST=smtp.mailgun.org
 SMTP_PORT=587
 SMTP_USER=postmaster@your-domain.com
 SMTP_PASSWORD=YOUR_SMTP_PASSWORD
 SMTP_FROM=noreply@your-domain.com
 
-# 管理员账户
-ADMIN_EMAIL=admin@your-domain.com
+# ========== 管理员 ==========
+ADMIN_EMAIL=admin@strollunreal.com
 ADMIN_PASSWORD=YOUR_ADMIN_PASSWORD
 ```
 
-### 4.3 创建必要目录
+### 2.2 修改 docker-compose.yml (可选)
 
-```bash
-mkdir -p media/books
-mkdir -p pgdata
-mkdir -p certbot/conf certbot/www
-mkdir -p backups
+由于主服务器处理 SSL，我们可以禁用 Docker 内的 Certbot 服务以节省资源（可选，不改也没关系，只是会报错提示证书无法更新）。
+
+打开 `docker-compose.yml`，修改如下：
+
 ```
+version: "3.9"
 
-### 4.4 配置 Nginx（修改域名）
+services:
+  # PostgreSQL 17 数据库
+  db:
+    image: postgres:17-alpine
+    container_name: audiobook_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-audiobook}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-audiobook}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-audiobook} -d ${DB_NAME:-audiobook}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - audiobook_network
 
-```bash
-# 编辑 Nginx 配置
-vim nginx/conf.d/app.conf
-```
+  # FastAPI 后端
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: audiobook_backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-audiobook}:${DB_PASSWORD}@db:5432/${DB_NAME:-audiobook}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://yourdomain.com}
+      - MEDIA_PATH=/app/media
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    volumes:
+      - ./media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - audiobook_network
 
-将所有 `yourdomain.com` 替换为你的实际域名。
+  # SvelteKit 前端
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - PUBLIC_API_URL=${PUBLIC_API_URL:-/api}
+    container_name: audiobook_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - audiobook_network
 
-### 4.5 首次部署（无 SSL）
+  # Nginx 反向代理 (内部网关)
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: audiobook_nginx
+    restart: unless-stopped
+    ports:
+      # 只暴露 HTTP 端口供宿主机 Nginx 反向代理
+      - "${HTTP_PORT:-80}:80"
+      # - "${HTTPS_PORT:-443}:443" # 不需要 HTTPS，由宿主机处理
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./media:/var/www/media:ro
+      # 不需要 Certbot 卷
+      # - ./certbot/conf:/etc/letsencrypt:ro
+      # - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - audiobook_network
 
-首次部署时需要先获取 SSL 证书:
+  # Let's Encrypt 证书 (已移除，使用宿主机证书)
+  # certbot:
+  #   image: certbot/certbot
+  #   ...
 
-```bash
-# 临时修改 Nginx 配置，只监听 80 端口
-# 注释掉 SSL 相关配置
 
-# 启动服务
-docker compose up -d
+networks:
+  audiobook_network:
+    driver: bridge
 
-# 查看状态
-docker compose ps
+volumes:
+  pgdata:
+  media:
 
-# 查看日志
-docker compose logs -f
-```
-
----
-
-## 5. SSL 证书配置
-
-### 5.1 获取 Let's Encrypt 证书
-
-```bash
-# 停止 Nginx
-docker compose stop nginx
-
-# 获取证书
-docker run -it --rm \
-  -v $(pwd)/certbot/conf:/etc/letsencrypt \
-  -v $(pwd)/certbot/www:/var/www/certbot \
-  -p 80:80 \
-  certbot/certbot certonly \
-  --standalone \
-  --email admin@your-domain.com \
-  --agree-tos \
-  --no-eff-email \
-  -d your-domain.com \
-  -d www.your-domain.com
-```
-
-### 5.2 更新 Nginx 配置
-
-```bash
-# 取消 SSL 配置的注释
-vim nginx/conf.d/app.conf
-
-# 重启 Nginx
-docker compose up -d nginx
-```
-
-### 5.3 配置自动续期
-
-```bash
-# 编辑 crontab
-crontab -e
-
-# 添加定时任务（每天凌晨 3 点检查续期）
-0 3 * * * cd ~/apps/Audiobook_web_APP && docker compose run --rm certbot renew && docker compose restart nginx
-```
-
----
-
-## 6. 防火墙配置
-
-### 6.1 使用 UFW
-
-```bash
-# 启用 UFW
-sudo ufw enable
-
-# 允许 SSH
-sudo ufw allow 22/tcp
-
-# 允许 HTTP/HTTPS
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-
-# 查看状态
-sudo ufw status verbose
-```
-
-### 6.2 Oracle Cloud 安全列表
-
-在 Oracle Cloud 控制台:
-
-1. 进入 **网络** → **虚拟云网络**
-2. 选择你的 VCN → **安全列表**
-3. 添加入站规则:
-
-| 源 CIDR   | 协议 | 目标端口 |
-| --------- | ---- | -------- |
-| 0.0.0.0/0 | TCP  | 80       |
-| 0.0.0.0/0 | TCP  | 443      |
-
-### 6.3 AWS 安全组
-
-在 AWS 控制台:
-
-1. 进入 **EC2** → **安全组**
-2. 编辑入站规则:
-
-| 类型  | 端口 | 源        |
-| ----- | ---- | --------- |
-| HTTP  | 80   | 0.0.0.0/0 |
-| HTTPS | 443  | 0.0.0.0/0 |
-| SSH   | 22   | 你的 IP   |
-
----
-
-## 7. 域名配置
-
-### 7.1 DNS 记录
-
-在你的域名注册商（如 Cloudflare、Namecheap）添加:
-
-| 类型 | 名称 | 值             | TTL |
-| ---- | ---- | -------------- | --- |
-| A    | @    | YOUR_SERVER_IP | 300 |
-| A    | www  | YOUR_SERVER_IP | 300 |
-
-### 7.2 验证 DNS
-
-```bash
-# 检查 DNS 解析
-nslookup your-domain.com
-dig your-domain.com
-
-# 等待 DNS 生效（可能需要几分钟到几小时）
 ```
 
 ---
 
-## 8. 运维管理
+## 3. 集成 Nginx
 
-### 8.1 服务管理
+这是最关键的一步。我们需要修改服务器上现有的 Nginx 配置，将主域名的流量转发到我们的 Docker 应用（运行在 8123 端口）。
 
-```bash
-# 启动所有服务
-docker compose up -d
+### 3.1 编辑配置文件
 
-# 停止所有服务
-docker compose down
-
-# 重启单个服务
-docker compose restart backend
-docker compose restart frontend
-docker compose restart nginx
-
-# 查看服务状态
-docker compose ps
-
-# 查看资源使用
-docker stats
-```
-
-### 8.2 更新部署
+编辑你当前的 Nginx 配置文件：
 
 ```bash
-# 进入项目目录
-cd ~/apps/Audiobook_web_APP
-
-# 拉取最新代码
-git pull origin main
-
-# 重新构建并部署
-docker compose build --no-cache
-docker compose up -d
-
-# 运行数据库迁移（如有）
-docker compose exec backend alembic upgrade head
+sudo vim /etc/nginx/conf.d/v2rayssl_site.conf
 ```
 
-### 8.3 查看日志
+### 3.2 配置文件内容 (直接覆盖或修改)
 
-```bash
-# 所有服务日志
-docker compose logs -f
+请使用以下配置替换或修改原有内容。**注意保留你的 SSL 路径和现有特殊 `location` 块**。
 
-# 单个服务日志
-docker compose logs -f backend
-docker compose logs -f frontend
-docker compose logs -f nginx
-docker compose logs -f db
+```nginx
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name strollunreal.com;
 
-# 最近 100 行
-docker compose logs --tail 100 backend
-```
+    # ========== SSL 配置 (保持不变) ==========
+    ssl_certificate       /nginxweb/cert/server_fullchain.cert;
+    ssl_certificate_key   /nginxweb/cert/server.key;
+    ssl_protocols         TLSv1.2 TLSv1.3;
+    ssl_ciphers           TLS-AES-256-GCM-SHA384:TLS-CHACHA20-POLY1305-SHA256:TLS-AES-128-GCM-SHA256:TLS-AES-128-CCM-8-SHA256:TLS-AES-128-CCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256;
 
----
+    ssl_early_data on;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    add_header Strict-Transport-Security "max-age=31536000";
 
-## 9. 备份与恢复
+    # ========== 上传限制优化 ==========
+    # 允许上传最大 500M 的文件 (书籍/音频)
+    client_max_body_size 500M;
 
-### 9.1 手动备份
+    # ========== 现有应用路由 (保持不变) ==========
 
-```bash
-# 创建备份目录
-mkdir -p ~/backups
+    # 现有业务 1
+    location /pm1dsl {
+        proxy_pass http://127.0.0.1:21215;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 
-# 备份数据库
-docker compose exec -T db pg_dump -U audiobook audiobook > ~/backups/db_$(date +%Y%m%d_%H%M%S).sql
+    # 现有业务 2 (gRPC)
+    location /8f252770 {
+        grpc_pass grpc://127.0.0.1:35297;
+        grpc_connect_timeout 60s;
+        grpc_read_timeout 720m;
+        grpc_send_timeout 720m;
+        grpc_set_header X-Real-IP $remote_addr;
+        grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 
-# 备份媒体文件
-tar -czf ~/backups/media_$(date +%Y%m%d_%H%M%S).tar.gz media/
+    # ========== Audiobook App 主路由 (新加) ==========
+    # 将其他所有请求转发给 Docker 容器 (端口 8123)
+    location / {
+        proxy_pass http://127.0.0.1:8123;
 
-# 备份配置
-cp .env ~/backups/env_$(date +%Y%m%d_%H%M%S).bak
-```
+        # 必要的代理头
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 
-### 9.2 自动备份
-
-```bash
-# 创建备份脚本
-cat > ~/scripts/backup.sh << 'EOF'
-#!/bin/bash
-BACKUP_DIR=~/backups
-DATE=$(date +%Y%m%d_%H%M%S)
-cd ~/apps/Audiobook_web_APP
-
-# 备份数据库
-docker compose exec -T db pg_dump -U audiobook audiobook > $BACKUP_DIR/db_$DATE.sql
-
-# 备份媒体（增量）
-rsync -av --delete media/ $BACKUP_DIR/media/
-
-# 删除 7 天前的备份
-find $BACKUP_DIR -name "db_*.sql" -mtime +7 -delete
-
-echo "Backup completed: $DATE"
-EOF
-
-chmod +x ~/scripts/backup.sh
-
-# 添加定时任务（每天凌晨 2 点）
-crontab -e
-# 添加: 0 2 * * * ~/scripts/backup.sh >> ~/logs/backup.log 2>&1
-```
-
-### 9.3 恢复数据
-
-```bash
-# 恢复数据库
-cat ~/backups/db_YYYYMMDD_HHMMSS.sql | docker compose exec -T db psql -U audiobook audiobook
-
-# 恢复媒体文件
-tar -xzf ~/backups/media_YYYYMMDD_HHMMSS.tar.gz
-```
-
----
-
-## 10. 监控与日志
-
-### 10.1 系统监控
-
-```bash
-# 安装 htop
-sudo apt install htop
-
-# 查看系统资源
-htop
-
-# 查看磁盘使用
-df -h
-
-# 查看 Docker 资源
-docker system df
-```
-
-### 10.2 应用健康检查
-
-```bash
-# 检查后端 API
-curl -s http://localhost:8000/health
-
-# 检查前端
-curl -s http://localhost:3000
-
-# 外部检查
-curl -s https://your-domain.com/api/health
-```
-
-### 10.3 日志管理
-
-```bash
-# 配置日志轮转
-sudo vim /etc/logrotate.d/audiobook
-```
-
-内容:
-
-```
-/home/deploy/apps/Audiobook_web_APP/logs/*.log {
-    daily
-    missingok
-    rotate 14
-    compress
-    delaycompress
-    notifempty
-    copytruncate
+# HTTP 自动跳转 HTTPS (保持不变)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name strollunreal.com;
+    return 301 https://strollunreal.com$request_uri;
 }
 ```
 
----
-
-## 11. 故障排除
-
-### 问题: 容器无法启动
+### 3.3 测试并重载 Nginx
 
 ```bash
-# 查看详细日志
-docker compose logs backend
+# 检查配置语法是否正确
+sudo nginx -t
 
-# 检查配置
-docker compose config
-
-# 重新构建
-docker compose build --no-cache backend
-```
-
-### 问题: 数据库连接失败
-
-```bash
-# 检查数据库状态
-docker compose ps db
-
-# 进入数据库容器
-docker compose exec db psql -U audiobook -d audiobook
-
-# 检查连接字符串
-echo $DATABASE_URL
-```
-
-### 问题: SSL 证书过期
-
-```bash
-# 手动续期
-docker compose run --rm certbot renew
-
-# 重启 Nginx
-docker compose restart nginx
-```
-
-### 问题: 磁盘空间不足
-
-```bash
-# 查看磁盘使用
-df -h
-
-# 清理 Docker
-docker system prune -a
-
-# 清理旧备份
-find ~/backups -mtime +30 -delete
-```
-
-### 问题: 内存不足
-
-```bash
-# 查看内存使用
-free -h
-
-# 创建交换分区
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-
-# 永久启用
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+# 如果显示 successful，重载配置
+sudo systemctl reload nginx
 ```
 
 ---
 
-## 12. 安全加固
+## 4. 启动服务
 
-### 12.1 SSH 安全
-
-```bash
-sudo vim /etc/ssh/sshd_config
-
-# 禁用密码登录
-PasswordAuthentication no
-
-# 禁用 root 登录
-PermitRootLogin no
-
-# 重启 SSH
-sudo systemctl restart sshd
-```
-
-### 12.2 Fail2Ban
+回到应用目录启动 Docker 容器：
 
 ```bash
-# 启用 Fail2Ban
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
+cd ~/apps/Audiobook_web_APP
 
-# 查看状态
-sudo fail2ban-client status
+# 构建并启动后台运行
+sudo docker compose up -d --build
+
+# 查看运行状态
+sudo docker compose ps
 ```
 
-### 12.3 定期更新
+你应该能看到 `audiobook_nginx` 正在运行并监听 `0.0.0.0:8123->80/tcp`。
 
-```bash
-# 创建更新脚本
-cat > ~/scripts/update.sh << 'EOF'
-#!/bin/bash
-sudo apt update
-sudo apt upgrade -y
-sudo apt autoremove -y
-EOF
-
-chmod +x ~/scripts/update.sh
-
-# 添加定时任务（每周日凌晨 4 点）
-# 0 4 * * 0 ~/scripts/update.sh >> ~/logs/update.log 2>&1
-```
+现在访问 `https://strollunreal.com`，应该能看到你的有声书应用了！
+原有的 `https://strollunreal.com/pm1dsl` 等链接也可以正常访问。
 
 ---
 
-## 附录: 常用命令速查
+## 5. 运维命令
+
+### 查看日志
 
 ```bash
-# 部署
-docker compose up -d              # 启动
-docker compose down               # 停止
-docker compose restart            # 重启
-docker compose logs -f            # 日志
+# 查看所有日志
+docker compose logs -f
 
-# 更新
-git pull && docker compose build --no-cache && docker compose up -d
+# 查看后端日志
+docker compose logs -f backend
 
-# 备份
-docker compose exec -T db pg_dump -U audiobook audiobook > backup.sql
-
-# 证书
-docker compose run --rm certbot renew
-
-# 监控
-docker stats
-htop
-df -h
+# 查看 Nginx 访问日志
+docker compose logs -f nginx
 ```
 
----
+### 更新应用
 
-## 附录: 服务架构图
+```bash
+# 拉取最新代码
+git pull
 
+# 重启服务 (会自动重新构建)
+docker compose up -d --build
 ```
-                     ┌──────────────────┐
-                     │     用户请求      │
-                     │  your-domain.com │
-                     └────────┬─────────┘
-                              │
-                              ▼
-                     ┌──────────────────┐
-                     │      Nginx       │
-                     │    (443/80)      │
-                     │   SSL 终止       │
-                     └────────┬─────────┘
-                              │
-         ┌────────────────────┼────────────────────┐
-         │                    │                    │
-         ▼                    ▼                    ▼
-   ┌───────────┐       ┌───────────┐       ┌───────────┐
-   │   /api/*  │       │ /media/*  │       │   其他    │
-   │  FastAPI  │       │  静态文件  │       │ SvelteKit │
-   │   :8000   │       │  直接服务  │       │   :3000   │
-   └─────┬─────┘       └───────────┘       └───────────┘
-         │
-         ▼
-   ┌───────────┐
-   │ PostgreSQL│
-   │   :5432   │
-   └───────────┘
+
+### 备份数据
+
+```bash
+# 备份数据库
+docker compose exec -T db pg_dump -U audiobook audiobook > backup_$(date +%Y%m%d).sql
+
+# 备份书籍文件
+tar -czf media_backup_$(date +%Y%m%d).tar.gz media/
 ```
