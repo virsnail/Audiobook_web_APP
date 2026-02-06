@@ -1,7 +1,7 @@
 # FastAPI 核心
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
-python-multipart==0.0.12
+python-multipart==0.0.22
 
 # 数据库
 sqlalchemy[asyncio]==2.0.36
@@ -32,11 +32,11 @@ edge-tts>=7.2.7
 
 # Markdown 处理
 markdown==3.7
-pymdown-extensions==10.12
+pymdown-extensions==10.16.1
 
 # 工具
 httpx==0.28.0
-orjson==3.10.12
+orjson==3.11.5
 
 # 开发
 pytest==8.3.0
