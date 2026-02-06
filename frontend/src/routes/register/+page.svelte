@@ -135,7 +135,7 @@
 </script>
 
 <svelte:head>
-  <title>注册 - AudioBook</title>
+  <title>注册 Register - AudioBook</title>
 </svelte:head>
 
 <div
@@ -162,7 +162,7 @@
         </svg>
       </div>
       <h1 class="text-2xl font-bold text-gray-900">AudioBook Reader</h1>
-      <p class="text-gray-500 mt-1">创建新账户</p>
+      <p class="text-gray-500 mt-1">创建新账户 Create New Account</p>
     </div>
 
     <!-- 步骤指示器 -->
@@ -192,8 +192,12 @@
       {#if step === 1}
         <div class="space-y-5">
           <div class="text-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-900">输入邀请码</h2>
-            <p class="text-gray-500 text-sm mt-1">需要邀请码才能注册</p>
+            <h2 class="text-lg font-semibold text-gray-900">
+              输入邀请码 Enter Invitation Code
+            </h2>
+            <p class="text-gray-500 text-sm mt-1">
+              需要邀请码才能注册 Invitation code required
+            </p>
           </div>
 
           <div>
@@ -201,7 +205,7 @@
               for="invitation"
               class="block text-sm font-medium text-gray-700 mb-1"
             >
-              邀请码
+              邀请码 Invitation Code
             </label>
             <input
               id="invitation"
@@ -225,7 +229,7 @@
             onclick={goToStep2}
             class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-xl hover:from-blue-600 hover:to-indigo-700 focus:ring-4 focus:ring-blue-200 transition-all"
           >
-            下一步
+            下一步 Next
           </button>
         </div>
       {/if}
@@ -234,8 +238,12 @@
       {#if step === 2}
         <div class="space-y-5">
           <div class="text-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-900">验证邮箱</h2>
-            <p class="text-gray-500 text-sm mt-1">我们会发送验证码到您的邮箱</p>
+            <h2 class="text-lg font-semibold text-gray-900">
+              验证邮箱 Verify Email
+            </h2>
+            <p class="text-gray-500 text-sm mt-1">
+              我们会发送验证码到您的邮箱 We'll send a code to your email
+            </p>
           </div>
 
           <div>
@@ -243,7 +251,7 @@
               for="email"
               class="block text-sm font-medium text-gray-700 mb-1"
             >
-              邮箱
+              邮箱 Email
             </label>
             <div class="flex gap-2">
               <input
@@ -260,7 +268,7 @@
                 disabled={isLoading || countdown > 0}
                 class="px-4 py-3 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               >
-                {countdown > 0 ? `${countdown}s` : "发送验证码"}
+                {countdown > 0 ? `${countdown}s` : "发送验证码 Send Code"}
               </button>
             </div>
           </div>
@@ -271,7 +279,7 @@
                 for="emailCode"
                 class="block text-sm font-medium text-gray-700 mb-1"
               >
-                验证码
+                验证码 Verification Code
               </label>
               <input
                 id="emailCode"
@@ -301,7 +309,7 @@
               }}
               class="flex-1 py-3 px-4 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-all"
             >
-              上一步
+              上一步 Back
             </button>
             <button
               type="button"
@@ -309,7 +317,7 @@
               disabled={!codeSent || !emailCode}
               class="flex-1 py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-xl hover:from-blue-600 hover:to-indigo-700 focus:ring-4 focus:ring-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              下一步
+              下一步 Next
             </button>
           </div>
         </div>
@@ -319,8 +327,12 @@
       {#if step === 3}
         <form onsubmit={handleRegister} class="space-y-5">
           <div class="text-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-900">设置密码</h2>
-            <p class="text-gray-500 text-sm mt-1">完成注册</p>
+            <h2 class="text-lg font-semibold text-gray-900">
+              设置密码 Set Password
+            </h2>
+            <p class="text-gray-500 text-sm mt-1">
+              完成注册 Complete Registration
+            </p>
           </div>
 
           <div>
@@ -328,7 +340,7 @@
               for="nickname"
               class="block text-sm font-medium text-gray-700 mb-1"
             >
-              昵称 <span class="text-gray-400">(可选)</span>
+              昵称 Nickname <span class="text-gray-400">(可选 Optional)</span>
             </label>
             <input
               id="nickname"
@@ -344,7 +356,7 @@
               for="password"
               class="block text-sm font-medium text-gray-700 mb-1"
             >
-              密码
+              密码 Password
             </label>
             <input
               id="password"
@@ -362,7 +374,7 @@
               for="confirmPassword"
               class="block text-sm font-medium text-gray-700 mb-1"
             >
-              确认密码
+              确认密码 Confirm Password
             </label>
             <input
               id="confirmPassword"
@@ -391,7 +403,7 @@
               }}
               class="flex-1 py-3 px-4 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-all"
             >
-              上一步
+              上一步 Back
             </button>
             <button
               type="submit"
@@ -399,9 +411,9 @@
               class="flex-1 py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-xl hover:from-blue-600 hover:to-indigo-700 focus:ring-4 focus:ring-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {#if isLoading}
-                注册中...
+                注册中... Registering...
               {:else}
-                完成注册
+                完成注册 Complete
               {/if}
             </button>
           </div>
@@ -411,12 +423,12 @@
       <!-- 登录链接 -->
       <div class="mt-6 text-center">
         <p class="text-gray-500 text-sm">
-          已有账户？
+          已有账户？ Already have an account?
           <a
             href="/login"
             class="text-blue-600 hover:text-blue-700 font-medium"
           >
-            立即登录
+            立即登录 Login Now
           </a>
         </p>
       </div>

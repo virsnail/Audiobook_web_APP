@@ -127,7 +127,7 @@
 </script>
 
 <svelte:head>
-  <title>我的书架 - AudioBook</title>
+  <title>我的书架 Bookshelf - AudioBook</title>
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
@@ -140,7 +140,7 @@
     class="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-200 z-10 safe-area-top"
   >
     <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">我的书架</h1>
+      <h1 class="text-2xl font-bold text-gray-900">我的书架 Bookshelf</h1>
 
       <div class="flex items-center gap-3">
         {#if authStore.isLoggedIn}
@@ -162,7 +162,7 @@
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            <span class="hidden sm:inline">上传</span>
+            <span class="hidden sm:inline">上传 Upload</span>
           </a>
 
           <!-- 用户菜单 -->
@@ -197,7 +197,7 @@
             >
               <div class="px-4 py-3 border-b border-gray-100">
                 <p class="font-medium text-gray-900">
-                  {authStore.user?.nickname || "用户"}
+                  {authStore.user?.nickname || "用户 User"}
                 </p>
                 <p class="text-sm text-gray-500 truncate">
                   {authStore.user?.email}
@@ -207,7 +207,7 @@
                 onclick={handleLogout}
                 class="w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 transition-colors rounded-b-xl"
               >
-                退出登录
+                退出登录 Logout
               </button>
             </div>
           </div>
@@ -216,13 +216,13 @@
             href="/login"
             class="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
           >
-            登录
+            登录 Login
           </a>
           <a
             href="/register"
             class="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
           >
-            注册
+            注册 Register
           </a>
         {/if}
       </div>
@@ -286,7 +286,7 @@
             <!-- 信息和操作 -->
             <div class="p-4">
               <p class="text-gray-500 text-sm line-clamp-2">
-                {book.description || "暂无简介"}
+                {book.description || "暂无简介 No Description"}
               </p>
 
               <!-- 操作按钮 -->
@@ -295,7 +295,7 @@
                   href={getReaderRoute(book)}
                   class="flex items-center text-blue-600 text-sm font-medium"
                 >
-                  <span>开始阅读</span>
+                  <span>开始阅读 Read</span>
                   <svg
                     class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"
                     fill="none"
@@ -316,7 +316,7 @@
                   <button
                     onclick={() => openShareDialog(book.id)}
                     class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="分享"
+                    title="分享 Share"
                   >
                     <svg
                       class="w-5 h-5"
@@ -337,7 +337,7 @@
                   <button
                     onclick={() => handleDelete(book.id)}
                     class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    title="删除"
+                    title="删除 Delete"
                   >
                     <svg
                       class="w-5 h-5"
@@ -373,8 +373,12 @@
                 d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
               />
             </svg>
-            <h3 class="text-lg font-medium text-gray-900">还没有书籍</h3>
-            <p class="text-gray-500 mt-1">上传你的第一本书开始阅读吧</p>
+            <h3 class="text-lg font-medium text-gray-900">
+              还没有书籍 No Books
+            </h3>
+            <p class="text-gray-500 mt-1">
+              上传你的第一本书开始阅读吧 Upload your first book
+            </p>
             <a
               href="/upload"
               class="inline-flex items-center gap-2 mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
@@ -392,7 +396,7 @@
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              上传书籍
+              上传书籍 Upload Book
             </a>
           </div>
         {/each}
@@ -407,8 +411,8 @@
             AudioBook Reader
           </h2>
           <p class="text-xl text-gray-600 mb-10 leading-relaxed">
-            沉浸式有声书阅读体验<br />
-            实时文本对齐，深度学习的最佳伴侣
+            沉浸式有声书阅读体验 Immersive Audiobook Experience<br />
+            实时文本对齐，深度学习的最佳伴侣 Real-time Text Alignment
           </p>
 
           <div
@@ -418,13 +422,13 @@
               href="/login"
               class="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
             >
-              立即登录
+              立即登录 Login Now
             </a>
             <a
               href="/register"
               class="w-full sm:w-auto px-8 py-3.5 bg-white text-gray-700 font-medium rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
             >
-              注册账号
+              注册账号 Register Account
             </a>
           </div>
 
@@ -520,18 +524,18 @@
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
   >
     <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-      <h3 class="text-xl font-bold text-gray-900 mb-4">分享书籍</h3>
+      <h3 class="text-xl font-bold text-gray-900 mb-4">分享书籍 Share Book</h3>
 
       <!-- 分享给指定用户 -->
       <div class="mb-4">
         <label class="block text-sm font-medium text-gray-700 mb-1">
-          分享给指定用户
+          分享给指定用户 Share to User
         </label>
         <div class="flex gap-2">
           <input
             type="email"
             bind:value={shareEmail}
-            placeholder="输入用户邮箱"
+            placeholder="输入用户邮箱 Enter email"
             class="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <button
@@ -539,7 +543,7 @@
             disabled={shareLoading}
             class="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 disabled:opacity-50"
           >
-            分享
+            分享 Share
           </button>
         </div>
       </div>
@@ -552,7 +556,7 @@
         disabled={shareLoading}
         class="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-medium rounded-xl hover:from-green-600 hover:to-emerald-700 disabled:opacity-50"
       >
-        公开分享给所有用户
+        公开分享给所有用户 Share Publicly
       </button>
 
       {#if shareError}
@@ -567,7 +571,7 @@
         onclick={() => (showShareDialog = false)}
         class="w-full mt-4 py-2 text-gray-500 hover:text-gray-700"
       >
-        取消
+        取消 Cancel
       </button>
     </div>
   </div>
