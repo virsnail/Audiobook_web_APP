@@ -9,7 +9,8 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import engine, Base, AsyncSessionLocal
 from app.models.user import User, InvitationCode
-from app.routers import auth_router, books_router
+from app.models.activity import UserActivityLog
+from app.routers import auth_router, books_router, activity_router as activity_router_module
 from app.utils.security import get_password_hash
 
 
@@ -87,6 +88,7 @@ app.add_middleware(
 # 路由
 app.include_router(auth_router, prefix="/auth", tags=["认证"])
 app.include_router(books_router, prefix="/books", tags=["书籍"])
+app.include_router(activity_router_module, prefix="/activity", tags=["活动"])
 
 
 @app.get("/health")

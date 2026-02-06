@@ -95,6 +95,31 @@ export async function createInvitationCodes(count: number = 1): Promise<{ codes:
   });
 }
 
+// 修改密码
+export async function changePassword(newPassword: string): Promise<{ message: string }> {
+  return request('/auth/change-password', {
+    method: 'PUT',
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+}
+
+// 退出登录
+export async function logout(): Promise<{ message: string }> {
+  return request('/auth/logout', {
+    method: 'POST',
+  });
+}
+
+// 记录前端活动
+export async function logActivity(action: string, details?: Record<string, any>): Promise<void> {
+  // 不等待日志记录结果，避免阻塞 UI
+  request('/activity/log', {
+    method: 'POST',
+    body: JSON.stringify({ action, details }),
+  }).catch(e => console.error('Log activity failed', e));
+}
+
+
 // ============ 书籍 API ============
 
 export interface Book {

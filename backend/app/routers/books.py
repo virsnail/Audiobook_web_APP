@@ -20,6 +20,8 @@ from app.schemas.book import BookResponse, BookListResponse, BookProgressUpdate,
 from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query
 from app.config import settings
 from app.utils import epub_utils  # 方案2: EPUB processing
+from app.services.activity_logger import ActivityLogger
+from app.database import AsyncSessionLocal
 
 router = APIRouter()
 
@@ -250,6 +252,8 @@ async def create_book(
     description: Optional[str] = Form(None),
     book_zip: UploadFile = File(..., description="包含多章节文件的 ZIP (支持: 0000001.mp3/txt/json 或 ch001_audio.mp3/text.txt/align.json)"),
     cover_file: Optional[UploadFile] = File(None),
+    background_tasks: BackgroundTasks = None,  # Inject
+    request: Request = None,  # Inject
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -372,12 +376,41 @@ async def create_book(
         await db.commit()
         await db.refresh(book)
         
+        # 记录上传活动
+        action_type = "UPLOAD_TXT"
+        if book_type == "epub":
+            action_type = "UPLOAD_EPUB"
+            
+        if background_tasks:
+            background_tasks.add_task(
+                ActivityLogger.log_activity_background,
+                AsyncSessionLocal,
+                str(current_user.id),
+                action_type,
+                str(book.id),
+                {"title": book.title, "filename": book_zip.filename},
+                request.headers.get("user-agent") if request else None
+            )
+        
         return book
         
     except ValueError as e:
         # 清理已上传的文件
         if os.path.exists(full_path):
             shutil.rmtree(full_path)
+        
+        # 记录上传失败活动
+        if background_tasks:
+            background_tasks.add_task(
+                ActivityLogger.log_activity_background,
+                AsyncSessionLocal,
+                str(current_user.id),
+                "UPLOAD_FAILED",
+                None,
+                {"error": str(e), "title": title, "filename": book_zip.filename},
+                request.headers.get("user-agent") if request else None
+            )
+            
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -386,6 +419,19 @@ async def create_book(
         # 清理已上传的文件
         if os.path.exists(full_path):
             shutil.rmtree(full_path)
+            
+        # 记录上传失败活动
+        if background_tasks:
+            background_tasks.add_task(
+                ActivityLogger.log_activity_background,
+                AsyncSessionLocal,
+                str(current_user.id),
+                "UPLOAD_FAILED",
+                None,
+                {"error": str(e), "title": title, "filename": book_zip.filename},
+                request.headers.get("user-agent") if request else None
+            )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"上传失败: {str(e)}"
@@ -406,7 +452,8 @@ async def background_tts_processing(
     raw_text: str, 
     output_dir: str,
     book_title: str,
-    db_url: str
+    db_url: str,
+    voice: str = "zh-CN-YunyangNeural"
 ):
     """后台任务：TTS 处理完成后更新数据库状态"""
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -417,13 +464,14 @@ async def background_tts_processing(
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     try:
-        logger.info(f"开始处理书籍 {book_id} 的 TTS 转换")
+        logger.info(f"开始处理书籍 {book_id} 的 TTS 转换 (Voice: {voice})")
         
         # 执行 TTS 处理
         manifest = await tts_utils.process_text_to_audiobook(
             raw_text=raw_text,
             output_dir=output_dir,
-            book_title=book_title
+            book_title=book_title,
+            voice=voice
         )
         
         async with async_session() as session:
@@ -461,11 +509,13 @@ async def background_tts_processing(
 @router.post("/from-text", response_model=BookResponse, summary="从文本创建有声书")
 async def create_book_from_text(
     background_tasks: BackgroundTasks,
+    request: Request,
     title: str = Form(...),
     author: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     text_content: Optional[str] = Form(None),
     txt_file: Optional[UploadFile] = File(None),
+    voice: str = Form("zh-CN-YunyangNeural"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -481,95 +531,123 @@ async def create_book_from_text(
     - 生成词级别时间对齐
     - 按时长自动分割章节
     """
-    # 获取文本内容
-    raw_text = None
-    
-    if txt_file and txt_file.filename:
-        # 从上传的文件读取
-        content = await txt_file.read()
-        try:
-            raw_text = content.decode('utf-8')
-        except UnicodeDecodeError:
-            raw_text = content.decode('gbk', errors='ignore')
-    elif text_content:
-        raw_text = text_content
-    
-    if not raw_text or not raw_text.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="请提供文本内容（上传 TXT 文件或粘贴文本）"
+    try:
+        # 获取文本内容
+        raw_text = None
+        
+        if txt_file and txt_file.filename:
+            # 从上传的文件读取
+            content = await txt_file.read()
+            try:
+                raw_text = content.decode('utf-8')
+            except UnicodeDecodeError:
+                raw_text = content.decode('gbk', errors='ignore')
+        elif text_content:
+            raw_text = text_content
+        
+        if not raw_text or not raw_text.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请提供文本内容（上传 TXT 文件或粘贴文本）"
+            )
+        
+        # 创建书籍目录
+        book_id = uuid.uuid4()
+        storage_path = f"{current_user.id}/{book_id}"
+        full_path = os.path.join(settings.MEDIA_PATH, "books", storage_path)
+        os.makedirs(full_path, exist_ok=True)
+        
+        # 保存原始文本
+        raw_text_path = os.path.join(full_path, "raw_text.txt")
+        with open(raw_text_path, 'w', encoding='utf-8') as f:
+            f.write(raw_text)
+        
+        # Markdown 格式检测和清洗
+        # 如果包含 MD 格式标记，自动清洗；如果是纯文本，不会出错
+        from app.utils.tts_utils import MarkdownCleaner
+        
+        logger.info(f"Checking for MD markers in text of length {len(raw_text)}")
+        # 检测是否包含常见 MD 标记
+        has_md_markers = bool(
+            re.search(r'```|^#{1,6}\s|\*\*|\[.+\]\(.+\)|!\[.*\]\(.+\)', raw_text, re.MULTILINE)
         )
-    
-    # 创建书籍目录
-    book_id = uuid.uuid4()
-    storage_path = f"{current_user.id}/{book_id}"
-    full_path = os.path.join(settings.MEDIA_PATH, "books", storage_path)
-    os.makedirs(full_path, exist_ok=True)
-    
-    # 保存原始文本
-    raw_text_path = os.path.join(full_path, "raw_text.txt")
-    with open(raw_text_path, 'w', encoding='utf-8') as f:
-        f.write(raw_text)
-    
-    # Markdown 格式检测和清洗
-    # 如果包含 MD 格式标记，自动清洗；如果是纯文本，不会出错
-    from app.utils.tts_utils import MarkdownCleaner
-    
-    logger.info(f"Checking for MD markers in text of length {len(raw_text)}")
-    # 检测是否包含常见 MD 标记
-    has_md_markers = bool(
-        re.search(r'```|^#{1,6}\s|\*\*|\[.+\]\(.+\)|!\[.*\]\(.+\)', raw_text, re.MULTILINE)
-    )
-    logger.info(f"Has MD markers: {has_md_markers}")
-    
-    if has_md_markers:
-        logger.info(f"检测到 Markdown 格式，进行清洗处理")
-        try:
-            cleaned_text = MarkdownCleaner.md_to_txt(raw_text)
-            logger.info(f"Cleaned text length: {len(cleaned_text)}")
-        except Exception as e:
-            logger.error(f"Markdown cleaning failed: {e}")
-            # Fallback to raw text if cleaning fails
-            cleaned_text = raw_text
-    else:
-        # 尝试清洗版权信息（针对纯文本）
-        try:
-            logger.info("Tentatively cleaning copyright info from raw text")
-            cleaned_text = MarkdownCleaner.clean_copyright_text(raw_text)
-        except Exception as e:
-            logger.warning(f"Copyright cleaning failed: {e}")
-            cleaned_text = raw_text
-    
-    # 使用清洗后的文本进行 TTS 处理
-    
-    # 创建数据库记录（状态为 processing）
-    book = Book(
-        id=book_id,
-        owner_id=current_user.id,
-        title=title,
-        author=author,
-        description=description,
-        storage_path=storage_path,
-        book_type="txt",
-        processing_status="processing",
-        total_duration=0,
-        total_segments=0,
-    )
-    db.add(book)
-    await db.commit()
-    await db.refresh(book)
-    
-    # 添加后台任务（使用清洗后的文本）
-    background_tasks.add_task(
-        background_tts_processing,
-        book_id=book_id,
-        raw_text=cleaned_text,  # 使用清洗后的文本
-        output_dir=full_path,
-        book_title=title,
-        db_url=str(settings.DATABASE_URL)
-    )
-    
-    return book
+        logger.info(f"Has MD markers: {has_md_markers}")
+        
+        if has_md_markers:
+            logger.info(f"检测到 Markdown 格式，进行清洗处理")
+            try:
+                cleaned_text = MarkdownCleaner.md_to_txt(raw_text)
+                logger.info(f"Cleaned text length: {len(cleaned_text)}")
+            except Exception as e:
+                logger.error(f"Markdown cleaning failed: {e}")
+                # Fallback to raw text if cleaning fails
+                cleaned_text = raw_text
+        else:
+            # 尝试清洗版权信息（针对纯文本）
+            try:
+                logger.info("Tentatively cleaning copyright info from raw text")
+                cleaned_text = MarkdownCleaner.clean_copyright_text(raw_text)
+            except Exception as e:
+                logger.warning(f"Copyright cleaning failed: {e}")
+                cleaned_text = raw_text
+        
+        # 使用清洗后的文本进行 TTS 处理
+        
+        # 创建数据库记录（状态为 processing）
+        book = Book(
+            id=book_id,
+            owner_id=current_user.id,
+            title=title,
+            author=author,
+            description=description,
+            storage_path=storage_path,
+            book_type="txt",
+            processing_status="processing",
+            total_duration=0,
+            total_segments=0,
+        )
+        db.add(book)
+        await db.commit()
+        await db.refresh(book)
+        
+        # 添加后台任务（使用清洗后的文本）
+        background_tasks.add_task(
+            background_tts_processing,
+            book_id=book_id,
+            raw_text=cleaned_text,  # 使用清洗后的文本
+            output_dir=full_path,
+            book_title=title,
+            db_url=str(settings.DATABASE_URL),
+            voice=voice
+        )
+        
+        # 记录上传活动 (TXT/Text)
+        background_tasks.add_task(
+            ActivityLogger.log_activity_background,
+            AsyncSessionLocal,
+            str(current_user.id),
+            "UPLOAD_TXT",
+            str(book.id),
+            {"title": book.title, "source": "file" if txt_file else "text"},
+            request.headers.get("user-agent")
+        )
+        
+        return book
+
+    except Exception as e:
+        # 记录上传失败活动
+        background_tasks.add_task(
+            ActivityLogger.log_activity_background,
+            AsyncSessionLocal,
+            str(current_user.id),
+            "UPLOAD_FAILED",
+            None,
+            {"error": str(e), "title": title, "type": "txt"},
+            request.headers.get("user-agent")
+        )
+        raise e
+
+
 
 @router.get("/{book_id}", response_model=BookResponse, summary="获取书籍详情")
 async def get_book(
@@ -607,6 +685,8 @@ async def get_book(
 @router.get("/{book_id}/manifest", summary="获取书籍章节清单")
 async def get_manifest(
     book_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -619,6 +699,17 @@ async def get_manifest(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="书籍不存在"
         )
+    
+    # 记录阅读活动
+    background_tasks.add_task(
+        ActivityLogger.log_activity_background,
+        AsyncSessionLocal,
+        str(current_user.id),
+        "READ_BOOK",
+        str(book.id),
+        {"title": book.title},
+        request.headers.get("user-agent")
+    )
     
     manifest_path = os.path.join(
         settings.MEDIA_PATH, "books", book.storage_path, "manifest.json"
@@ -1120,6 +1211,8 @@ async def update_progress(
 @router.delete("/{book_id}", summary="删除书籍")
 async def delete_book(
     book_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1178,12 +1271,25 @@ async def delete_book(
     await db.delete(book)
     await db.commit()
     
+    # 记录删除活动
+    background_tasks.add_task(
+        ActivityLogger.log_activity_background,
+        AsyncSessionLocal,
+        str(current_user.id),
+        "DELETE_BOOK",
+        str(book_id),
+        {"title": book.title},
+        request.headers.get("user-agent")
+    )
+    
     return {"message": "书籍已删除"}
 
 
 @router.post("/{book_id}/share", summary="分享书籍")
 async def share_book(
     book_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
     shared_to_email: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -1221,7 +1327,9 @@ async def share_book(
             .where(BookShare.book_id == book_id)
             .where(BookShare.shared_to == target_user.id)
         )
-        if result.scalar_one_or_none():
+        existing_share = result.scalar_one_or_none()
+        
+        if existing_share:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="已经分享给该用户"
@@ -1229,19 +1337,41 @@ async def share_book(
         
         share = BookShare(
             book_id=book_id,
-            shared_by=current_user.id,
             shared_to=target_user.id,
+            shared_by=current_user.id
         )
         db.add(share)
         await db.commit()
         
-        return {"message": f"已分享给 {shared_to_email}"}
+        # 记录分享给用户
+        background_tasks.add_task(
+            ActivityLogger.log_activity_background,
+            AsyncSessionLocal,
+            str(current_user.id),
+            "SHARE_USER",
+            str(book.id),
+            {"title": book.title, "shared_to": shared_to_email},
+            request.headers.get("user-agent")
+        )
+        
+        return {"message": f"已将书籍分享给 {shared_to_email}"}
     else:
         # 公开分享
         book.is_public = True
         await db.commit()
         
-        return {"message": "书籍已设为公开"}
+        # 记录公开分享
+        background_tasks.add_task(
+            ActivityLogger.log_activity_background,
+            AsyncSessionLocal,
+            str(current_user.id),
+            "SHARE_PUBLIC",
+            str(book.id),
+            {"title": book.title},
+            request.headers.get("user-agent")
+        )
+        
+        return {"message": "书籍已公开分享"}
 
 
 @router.get("/{book_id}/shares", summary="获取书籍分享状态")
@@ -1293,6 +1423,8 @@ async def get_book_shares(
 @router.delete("/{book_id}/shares", summary="取消所有分享")
 async def unshare_book(
     book_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1319,13 +1451,24 @@ async def unshare_book(
     result = await db.execute(
         delete(BookShare).where(BookShare.book_id == book_id)
     )
-    deleted_count = result.rowcount
+    deleted_shares = result.rowcount
     
     await db.commit()
     
+    # 记录取消分享
+    background_tasks.add_task(
+        ActivityLogger.log_activity_background,
+        AsyncSessionLocal,
+        str(current_user.id),
+        "UNSHARE",
+        str(book.id),
+        {"title": book.title, "deleted_shares": deleted_shares},
+        request.headers.get("user-agent")
+    )
+    
     return {
         "message": "已取消所有分享",
-        "deleted_shares": deleted_count
+        "deleted_shares": deleted_shares
     }
 
 

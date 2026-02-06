@@ -11,6 +11,9 @@
     shareBook,
     getBookShares,
     unshareBook,
+    changePassword,
+    logout,
+    logActivity,
     type Book,
   } from "$lib/utils/api";
 
@@ -37,6 +40,12 @@
     total_shares: number;
   } | null>(null);
   let shareStatusLoading = $state(false);
+
+  // 修改密码状态
+  let showPasswordDialog = $state(false);
+  let newPassword = $state("");
+  let changePasswordLoading = $state(false);
+  let changePasswordError = $state("");
 
   // 示例书籍（保留供参考，当前未使用）
   const sampleBooks = [
@@ -198,14 +207,56 @@
   }
 
   // 登出
-  function handleLogout() {
-    authStore.logout();
-    goto("/login");
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch (e) {
+      console.error("Logout failed", e);
+    } finally {
+      authStore.logout();
+      goto("/login");
+    }
   }
 
   onMount(() => {
     loadBooks();
   });
+
+  // 打开修改密码对话框
+  function openPasswordDialog() {
+    newPassword = "";
+    changePasswordError = "";
+    showPasswordDialog = true;
+  }
+
+  // 处理修改密码
+  async function handleChangePassword() {
+    if (!newPassword) {
+      changePasswordError = "请输入新密码 Please enter a new password";
+      return;
+    }
+    if (newPassword.length < 6) {
+      changePasswordError =
+        "密码长度至少需要6位 Password must be at least 6 characters";
+      return;
+    }
+
+    changePasswordLoading = true;
+    changePasswordError = "";
+
+    try {
+      await changePassword(newPassword);
+      alert("密码修改成功！Password changed successfully!");
+      showPasswordDialog = false;
+    } catch (err) {
+      changePasswordError =
+        err instanceof Error
+          ? err.message
+          : "修改失败 Failed to change password";
+    } finally {
+      changePasswordLoading = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -229,6 +280,7 @@
           <!-- 上传按钮 -->
           <a
             href="/upload"
+            onclick={() => logActivity("NAVIGATE_UPLOAD")}
             class="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
           >
             <svg
@@ -285,6 +337,12 @@
                   {authStore.user?.email}
                 </p>
               </div>
+              <button
+                onclick={openPasswordDialog}
+                class="w-full px-4 py-3 text-left text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100"
+              >
+                修改密码 Change Password
+              </button>
               <button
                 onclick={handleLogout}
                 class="w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 transition-colors rounded-b-xl"
@@ -733,6 +791,60 @@
       >
         取消 Cancel
       </button>
+    </div>
+  </div>
+{/if}
+<!-- 修改密码对话框 -->
+{#if showPasswordDialog}
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+  >
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+      <h3 class="text-xl font-bold text-gray-900 mb-4">
+        修改密码 Change Password
+      </h3>
+
+      {#if changePasswordError}
+        <div
+          class="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm border border-red-100"
+        >
+          {changePasswordError}
+        </div>
+      {/if}
+
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          新密码 New Password
+        </label>
+        <input
+          type="text"
+          bind:value={newPassword}
+          placeholder="请输入新密码 Enter new password"
+          class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        <p class="mt-2 text-xs text-gray-500">
+          无需输入旧密码。 No old password required.
+        </p>
+      </div>
+
+      <div class="flex gap-3 justify-end">
+        <button
+          onclick={() => (showPasswordDialog = false)}
+          class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+          disabled={changePasswordLoading}
+        >
+          取消 Cancel
+        </button>
+        <button
+          onclick={handleChangePassword}
+          class="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
+          disabled={changePasswordLoading}
+        >
+          {changePasswordLoading
+            ? "提交中... Submitting..."
+            : "确认修改 Confirm"}
+        </button>
+      </div>
     </div>
   </div>
 {/if}

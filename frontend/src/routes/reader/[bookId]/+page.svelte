@@ -13,6 +13,7 @@
   import AudioPlayer from "$lib/components/AudioPlayer.svelte";
   import TextContent from "$lib/components/TextContent.svelte";
   import { chaptersStore } from "$lib/stores/chapters.svelte";
+  import { logActivity } from "$lib/utils/api";
   import type { BookManifest, Segment } from "$lib/types/chapter";
 
   interface PageData {
@@ -181,6 +182,10 @@
   });
 
   function setTheme(t: string) {
+    // 只有当主题真正改变时才记录日志 (避免初始化时重复记录)
+    if (theme !== t && theme !== "") {
+      logActivity("CHANGE_THEME", { from: theme, to: t, book_id: data.bookId });
+    }
     theme = t;
     localStorage.setItem("reader_theme", t);
     if (t === "dark") {
@@ -192,6 +197,16 @@
 
   function setFontSize(size: number) {
     const newSize = Math.max(14, Math.min(32, size));
+
+    // 只有当字体大小真正改变时才记录日志
+    if (fontSize !== newSize) {
+      logActivity("CHANGE_FONT_SIZE", {
+        from: fontSize,
+        to: newSize,
+        book_id: data.bookId,
+      });
+    }
+
     fontSize = newSize;
     localStorage.setItem("reader_font_size", String(newSize));
     document.documentElement.style.setProperty(

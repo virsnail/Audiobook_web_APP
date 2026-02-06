@@ -4,10 +4,11 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth.svelte";
-  import { uploadBook, uploadTxtBook } from "$lib/utils/api";
+  import { uploadBook, uploadTxtBook, logActivity } from "$lib/utils/api";
 
   // 上传模式: 'zip' | 'txt'
   let uploadMode: "zip" | "txt" = $state("txt"); // 默认 TXT/MD 模式
+  let selectedVoice = $state("zh-CN-YunyangNeural"); // 默认中文语音
 
   let title = $state("");
   let author = $state("");
@@ -52,6 +53,7 @@
   // 上传
   async function handleSubmit(e: Event) {
     e.preventDefault();
+    logActivity("START_UPLOAD", { mode: uploadMode });
 
     if (!title.trim()) {
       error = "请输入书名";
@@ -99,6 +101,7 @@
         formData.append("title", title);
         if (author) formData.append("author", author);
         if (description) formData.append("description", description);
+        formData.append("voice", selectedVoice); // 添加语音参数
 
         if (txtFile) {
           formData.append("txt_file", txtFile);
@@ -221,7 +224,7 @@
                 ? 'bg-green-500 text-white shadow-lg'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
             >
-              � TXT/MD 文本
+              📚 TXT/MD 文本
             </button>
             <button
               type="button"
@@ -231,13 +234,13 @@
                 ? 'bg-blue-500 text-white shadow-lg'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
             >
-              � ZIP 压缩包
+              📦 ZIP 压缩包
             </button>
           </div>
           <p class="text-xs text-gray-400 mt-2">
             {uploadMode === "zip"
               ? "上传已准备好的有声书文件包"
-              : "支持 TXT/MD 格式，自动生成有声书（需等待处理）"}
+              : "支持 TXT/MD 格式，服务器自动生成有声书（等待处理完毕，才能成功打开书籍）Supports TXT/MD. Server auto-generates audiobooks (need to wait for processing to open books)"}
           </p>
         </div>
 
@@ -317,10 +320,10 @@
                     点击选择 ZIP 文件 Click to select ZIP
                   </p>
                   <p class="text-sm text-gray-400 mt-1">
-                    包含 0000001.mp3/txt/json
-                    等章节文件,也可以包含书籍封面图片。 Contains chapter files
-                    such as 0000001.mp3/txt/json, and can also include book
-                    cover image.
+                    必须包含 0000001.mp3/txt/json
+                    章节文件+音频文件+对齐文件。也可以包含书籍封面图片。 Must
+                    contains chapter files + mp3 files + json files. And can
+                    also include book cover image.
                   </p>
                 </label>
               {/if}
@@ -492,6 +495,62 @@
             class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600"
           >
             {error}
+          </div>
+        {/if}
+
+        <!-- 朗读声音选择 (仅 TXT 模式) -->
+        {#if uploadMode === "txt"}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              朗读声音 Voice Selection
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label
+                class="relative flex items-center p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-colors {selectedVoice ===
+                'zh-CN-YunyangNeural'
+                  ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                  : 'border-gray-200'}"
+              >
+                <input
+                  type="radio"
+                  name="voice"
+                  value="zh-CN-YunyangNeural"
+                  bind:group={selectedVoice}
+                  class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                />
+                <div class="ml-3">
+                  <span class="block text-sm font-medium text-gray-900">
+                    中文 - 云扬 (默认)
+                  </span>
+                  <span class="block text-xs text-gray-500"
+                    >zh-CN-YunyangNeural</span
+                  >
+                </div>
+              </label>
+
+              <label
+                class="relative flex items-center p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-colors {selectedVoice ===
+                'en-US-BrianNeural'
+                  ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                  : 'border-gray-200'}"
+              >
+                <input
+                  type="radio"
+                  name="voice"
+                  value="en-US-BrianNeural"
+                  bind:group={selectedVoice}
+                  class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                />
+                <div class="ml-3">
+                  <span class="block text-sm font-medium text-gray-900">
+                    English - Brian
+                  </span>
+                  <span class="block text-xs text-gray-500"
+                    >en-US-BrianNeural</span
+                  >
+                </div>
+              </label>
+            </div>
           </div>
         {/if}
 

@@ -22,3 +22,7 @@ class RegisterRequest(BaseModel):
     nickname: Optional[str] = None
     invitation_code: str
     email_code: str
+
+
+class ChangePasswordRequest(BaseModel):
+    new_password: str
