@@ -27,6 +27,9 @@ aiofiles==24.1.0
 python-magic==0.4.27
 mutagen==1.47.0
 
+# TTS (文本转语音)
+edge-tts>=7.2.7
+
 # Markdown 处理
 markdown==3.7
 pymdown-extensions==10.12

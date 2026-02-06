@@ -8,7 +8,7 @@ import re
 from typing import Optional, List
 from mutagen.mp3 import MP3
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -392,6 +392,154 @@ async def create_book(
         )
 
 
+# ============= TXT 文本转有声书 =============
+
+import asyncio
+import logging
+from app.utils import tts_utils
+
+logger = logging.getLogger(__name__)
+
+
+async def background_tts_processing(
+    book_id: uuid.UUID, 
+    raw_text: str, 
+    output_dir: str,
+    book_title: str,
+    db_url: str
+):
+    """后台任务：TTS 处理完成后更新数据库状态"""
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    
+    # 创建新的数据库会话（后台任务不能使用请求的会话）
+    engine = create_async_engine(db_url)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    
+    try:
+        logger.info(f"开始处理书籍 {book_id} 的 TTS 转换")
+        
+        # 执行 TTS 处理
+        manifest = await tts_utils.process_text_to_audiobook(
+            raw_text=raw_text,
+            output_dir=output_dir,
+            book_title=book_title
+        )
+        
+        async with async_session() as session:
+            result = await session.execute(select(Book).where(Book.id == book_id))
+            book = result.scalar_one_or_none()
+            
+            if book and manifest:
+                book.processing_status = "ready"
+                book.total_duration = int(manifest.get('total_duration', 0))
+                book.total_segments = manifest.get('total_words', 0)
+                await session.commit()
+                logger.info(f"书籍 {book_id} TTS 处理完成")
+            elif book:
+                book.processing_status = "failed"
+                book.processing_error = "TTS 处理失败"
+                await session.commit()
+                logger.error(f"书籍 {book_id} TTS 处理失败")
+                
+    except Exception as e:
+        logger.error(f"书籍 {book_id} TTS 处理异常: {str(e)}")
+        try:
+            async with async_session() as session:
+                result = await session.execute(select(Book).where(Book.id == book_id))
+                book = result.scalar_one_or_none()
+                if book:
+                    book.processing_status = "failed"
+                    book.processing_error = str(e)
+                    await session.commit()
+        except Exception as db_err:
+            logger.error(f"更新书籍状态失败: {str(db_err)}")
+    finally:
+        await engine.dispose()
+
+
+@router.post("/from-text", response_model=BookResponse, summary="从文本创建有声书")
+async def create_book_from_text(
+    background_tasks: BackgroundTasks,
+    title: str = Form(...),
+    author: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    text_content: Optional[str] = Form(None),
+    txt_file: Optional[UploadFile] = File(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    从纯文本创建有声书
+    
+    支持两种输入方式：
+    1. text_content: 直接粘贴文本内容
+    2. txt_file: 上传 TXT 文件
+    
+    服务器将异步处理：
+    - 使用 Edge-TTS 生成音频
+    - 生成词级别时间对齐
+    - 按时长自动分割章节
+    """
+    # 获取文本内容
+    raw_text = None
+    
+    if txt_file and txt_file.filename:
+        # 从上传的文件读取
+        content = await txt_file.read()
+        try:
+            raw_text = content.decode('utf-8')
+        except UnicodeDecodeError:
+            raw_text = content.decode('gbk', errors='ignore')
+    elif text_content:
+        raw_text = text_content
+    
+    if not raw_text or not raw_text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请提供文本内容（上传 TXT 文件或粘贴文本）"
+        )
+    
+    # 创建书籍目录
+    book_id = uuid.uuid4()
+    storage_path = f"{current_user.id}/{book_id}"
+    full_path = os.path.join(settings.MEDIA_PATH, "books", storage_path)
+    os.makedirs(full_path, exist_ok=True)
+    
+    # 保存原始文本
+    raw_text_path = os.path.join(full_path, "raw_text.txt")
+    with open(raw_text_path, 'w', encoding='utf-8') as f:
+        f.write(raw_text)
+    
+    # 创建数据库记录（状态为 processing）
+    book = Book(
+        id=book_id,
+        owner_id=current_user.id,
+        title=title,
+        author=author,
+        description=description,
+        storage_path=storage_path,
+        book_type="txt",
+        processing_status="processing",
+        total_duration=0,
+        total_segments=0,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+    
+    # 添加后台任务
+    background_tasks.add_task(
+        background_tts_processing,
+        book_id=book_id,
+        raw_text=raw_text,
+        output_dir=full_path,
+        book_title=title,
+        db_url=str(settings.DATABASE_URL)
+    )
+    
+    return book
+
 @router.get("/{book_id}", response_model=BookResponse, summary="获取书籍详情")
 async def get_book(
     book_id: uuid.UUID,
@@ -507,15 +655,27 @@ async def get_chapter_audio(
     audio_path = os.path.join(base_path, f"{chapter_id}_audio.mp3")
     
     if not os.path.exists(audio_path):
-        # 尝试带 ch 前缀的新格式
+        # 尝试带 ch 前缀的格式：ch1, ch001
         fallback_path = os.path.join(base_path, f"ch{chapter_id}_audio.mp3")
         if os.path.exists(fallback_path):
             audio_path = fallback_path
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="章节音频不存在"
-            )
+            # 尝试三位数字格式 ch001
+            try:
+                chapter_num = int(chapter_id)
+                fallback_path = os.path.join(base_path, f"ch{chapter_num:03d}_audio.mp3")
+                if os.path.exists(fallback_path):
+                    audio_path = fallback_path
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="章节音频不存在"
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="章节音频不存在"
+                )
     
     
     # 关键修复：支持 HTTP Range requests，允许浏览器 seek 到任意位置
@@ -603,17 +763,31 @@ async def get_chapter_text(
     )
     
     if not os.path.exists(text_path):
-        # 尝试带 ch 前缀的新格式
+        # 尝试带 ch 前缀的格式：ch1, ch001
         fallback_path = os.path.join(
             settings.MEDIA_PATH, "books", book.storage_path, f"ch{chapter_id}_text.txt"
         )
         if os.path.exists(fallback_path):
             text_path = fallback_path
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="章节文本不存在"
-            )
+            # 尝试三位数字格式 ch001
+            try:
+                chapter_num = int(chapter_id)
+                fallback_path = os.path.join(
+                    settings.MEDIA_PATH, "books", book.storage_path, f"ch{chapter_num:03d}_text.txt"
+                )
+                if os.path.exists(fallback_path):
+                    text_path = fallback_path
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="章节文本不存在"
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="章节文本不存在"
+                )
     
     with open(text_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -644,15 +818,27 @@ async def get_chapter_alignment(
     align_path = os.path.join(base_path, f"{chapter_id}_align.json")
     
     if not os.path.exists(align_path):
-        # 尝试带 ch 前缀的新格式
+        # 尝试带 ch 前缀的格式：ch1, ch001
         fallback_path = os.path.join(base_path, f"ch{chapter_id}_align.json")
         if os.path.exists(fallback_path):
             align_path = fallback_path
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="章节对齐数据不存在"
-            )
+            # 尝试三位数字格式 ch001
+            try:
+                chapter_num = int(chapter_id)
+                fallback_path = os.path.join(base_path, f"ch{chapter_num:03d}_align.json")
+                if os.path.exists(fallback_path):
+                    align_path = fallback_path
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="章节对齐数据不存在"
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="章节对齐数据不存在"
+                )
     
     with open(align_path, "r", encoding="utf-8") as f:
         return json.load(f)

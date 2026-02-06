@@ -108,6 +108,8 @@ export interface Book {
   is_public: boolean;
   book_type?: string; // "txt" | "epub"
   epub_structure?: string; // JSON for EPUB metadata
+  processing_status?: string; // "ready" | "processing" | "failed"
+  processing_error?: string;
   created_at: string;
 }
 
@@ -134,6 +136,14 @@ export async function getBooks(): Promise<BookListResponse> {
 // 上传书籍
 export async function uploadBook(formData: FormData): Promise<Book> {
   return request('/books', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+// 从文本创建有声书 (TTS 转换)
+export async function uploadTxtBook(formData: FormData): Promise<Book> {
+  return request('/books/from-text', {
     method: 'POST',
     body: formData,
   });

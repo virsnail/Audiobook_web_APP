@@ -4,19 +4,28 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth.svelte";
-  import { uploadBook } from "$lib/utils/api";
+  import { uploadBook, uploadTxtBook } from "$lib/utils/api";
+
+  // 上传模式: 'zip' | 'txt'
+  let uploadMode: "zip" | "txt" = $state("zip");
 
   let title = $state("");
   let author = $state("");
   let description = $state("");
+
+  // ZIP 模式
   let bookZip: File | null = $state(null);
   let coverFile: File | null = $state(null);
+
+  // TXT 模式
+  let txtFile: File | null = $state(null);
+  let textContent = $state("");
 
   let error = $state("");
   let isLoading = $state(false);
   let uploadProgress = $state(0);
 
-  // 文件选择
+  // ZIP 文件选择
   function handleZipSelect(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files[0]) {
@@ -31,6 +40,15 @@
     }
   }
 
+  // TXT 文件选择
+  function handleTxtSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      txtFile = input.files[0];
+      textContent = ""; // 清空粘贴内容
+    }
+  }
+
   // 上传
   async function handleSubmit(e: Event) {
     e.preventDefault();
@@ -40,30 +58,60 @@
       return;
     }
 
-    if (!bookZip) {
-      error = "请选择书籍 ZIP 文件";
-      return;
-    }
+    if (uploadMode === "zip") {
+      // ZIP 模式
+      if (!bookZip) {
+        error = "请选择书籍 ZIP 文件";
+        return;
+      }
 
-    error = "";
-    isLoading = true;
+      error = "";
+      isLoading = true;
 
-    try {
-      const formData = new FormData();
-      formData.append("title", title);
-      if (author) formData.append("author", author);
-      if (description) formData.append("description", description);
-      formData.append("book_zip", bookZip);
-      if (coverFile) formData.append("cover_file", coverFile);
+      try {
+        const formData = new FormData();
+        formData.append("title", title);
+        if (author) formData.append("author", author);
+        if (description) formData.append("description", description);
+        formData.append("book_zip", bookZip);
+        if (coverFile) formData.append("cover_file", coverFile);
 
-      await uploadBook(formData);
+        await uploadBook(formData);
+        goto("/");
+      } catch (err) {
+        error = err instanceof Error ? err.message : "上传失败";
+      } finally {
+        isLoading = false;
+      }
+    } else {
+      // TXT 模式
+      if (!txtFile && !textContent.trim()) {
+        error = "请上传 TXT 文件或粘贴文本内容";
+        return;
+      }
 
-      // 上传成功，跳转到首页
-      goto("/");
-    } catch (err) {
-      error = err instanceof Error ? err.message : "上传失败";
-    } finally {
-      isLoading = false;
+      error = "";
+      isLoading = true;
+
+      try {
+        const formData = new FormData();
+        formData.append("title", title);
+        if (author) formData.append("author", author);
+        if (description) formData.append("description", description);
+
+        if (txtFile) {
+          formData.append("txt_file", txtFile);
+        } else {
+          formData.append("text_content", textContent);
+        }
+
+        await uploadTxtBook(formData);
+        goto("/");
+      } catch (err) {
+        error = err instanceof Error ? err.message : "上传失败";
+      } finally {
+        isLoading = false;
+      }
     }
   }
 
@@ -158,49 +206,60 @@
           ></textarea>
         </div>
 
-        <!-- ZIP 文件 -->
+        <!-- 上传模式切换 -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">
-            书籍文件 (ZIP) Book File <span class="text-red-500">*</span>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            上传方式 Upload Mode <span class="text-red-500">*</span>
           </label>
-          <div
-            class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-blue-400 transition-colors"
-          >
-            <input
-              type="file"
-              accept=".zip"
-              onchange={handleZipSelect}
-              class="hidden"
-              id="zipInput"
-            />
-            {#if bookZip}
-              <div class="flex items-center justify-center gap-3">
-                <svg
-                  class="w-8 h-8 text-green-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <div class="text-left">
-                  <p class="font-medium text-gray-900">{bookZip.name}</p>
-                  <p class="text-sm text-gray-500">
-                    {formatSize(bookZip.size)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onclick={() => (bookZip = null)}
-                  class="ml-4 p-1 text-gray-400 hover:text-red-500"
-                >
+          <div class="flex gap-2">
+            <button
+              type="button"
+              onclick={() => (uploadMode = "zip")}
+              class="flex-1 py-3 px-4 rounded-xl font-medium transition-all {uploadMode ===
+              'zip'
+                ? 'bg-blue-500 text-white shadow-lg'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+            >
+              📦 ZIP 压缩包
+            </button>
+            <button
+              type="button"
+              onclick={() => (uploadMode = "txt")}
+              class="flex-1 py-3 px-4 rounded-xl font-medium transition-all {uploadMode ===
+              'txt'
+                ? 'bg-green-500 text-white shadow-lg'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+            >
+              📝 TXT 文本
+            </button>
+          </div>
+          <p class="text-xs text-gray-400 mt-2">
+            {uploadMode === "zip"
+              ? "上传已准备好的有声书文件包"
+              : "TXT 将自动生成有声书（需等待处理）"}
+          </p>
+        </div>
+
+        {#if uploadMode === "zip"}
+          <!-- ZIP 文件 -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              书籍文件 (ZIP) Book File <span class="text-red-500">*</span>
+            </label>
+            <div
+              class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-blue-400 transition-colors"
+            >
+              <input
+                type="file"
+                accept=".zip"
+                onchange={handleZipSelect}
+                class="hidden"
+                id="zipInput"
+              />
+              {#if bookZip}
+                <div class="flex items-center justify-center gap-3">
                   <svg
-                    class="w-5 h-5"
+                    class="w-8 h-8 text-green-500"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -209,38 +268,160 @@
                       stroke-linecap="round"
                       stroke-linejoin="round"
                       stroke-width="2"
-                      d="M6 18L18 6M6 6l12 12"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                </button>
-              </div>
-            {:else}
-              <label for="zipInput" class="cursor-pointer">
-                <svg
-                  class="w-12 h-12 text-gray-400 mx-auto mb-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                  />
-                </svg>
-                <p class="text-gray-600">
-                  点击选择 ZIP 文件 Click to select ZIP
-                </p>
-                <p class="text-sm text-gray-400 mt-1">
-                  包含 0000001.mp3/txt/json 等章节文件,也可以包含书籍封面图片。
-                  Contains chapter files such as 0000001.mp3/txt/json, and can
-                  also include book cover image.
-                </p>
-              </label>
-            {/if}
+                  <div class="text-left">
+                    <p class="font-medium text-gray-900">{bookZip.name}</p>
+                    <p class="text-sm text-gray-500">
+                      {formatSize(bookZip.size)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onclick={() => (bookZip = null)}
+                    class="ml-4 p-1 text-gray-400 hover:text-red-500"
+                  >
+                    <svg
+                      class="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              {:else}
+                <label for="zipInput" class="cursor-pointer">
+                  <svg
+                    class="w-12 h-12 text-gray-400 mx-auto mb-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                  <p class="text-gray-600">
+                    点击选择 ZIP 文件 Click to select ZIP
+                  </p>
+                  <p class="text-sm text-gray-400 mt-1">
+                    包含 0000001.mp3/txt/json
+                    等章节文件,也可以包含书籍封面图片。 Contains chapter files
+                    such as 0000001.mp3/txt/json, and can also include book
+                    cover image.
+                  </p>
+                </label>
+              {/if}
+            </div>
           </div>
-        </div>
+        {:else}
+          <!-- TXT 模式 -->
+          <div class="space-y-4">
+            <!-- TXT 文件上传 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                上传 TXT 文件 Upload TXT File
+              </label>
+              <div
+                class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-green-400 transition-colors"
+              >
+                <input
+                  type="file"
+                  accept=".txt"
+                  onchange={handleTxtSelect}
+                  class="hidden"
+                  id="txtInput"
+                />
+                {#if txtFile}
+                  <div class="flex items-center justify-center gap-3">
+                    <svg
+                      class="w-6 h-6 text-green-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span class="text-gray-900">{txtFile.name}</span>
+                    <span class="text-sm text-gray-500"
+                      >{formatSize(txtFile.size)}</span
+                    >
+                    <button
+                      type="button"
+                      onclick={() => (txtFile = null)}
+                      class="p-1 text-gray-400 hover:text-red-500"
+                    >
+                      <svg
+                        class="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                {:else}
+                  <label
+                    for="txtInput"
+                    class="cursor-pointer text-gray-500 text-sm"
+                  >
+                    点击上传 TXT 文件 Click to upload TXT
+                  </label>
+                {/if}
+              </div>
+            </div>
+
+            <!-- 或者分隔线 -->
+            <div class="flex items-center gap-4">
+              <div class="flex-1 h-px bg-gray-200"></div>
+              <span class="text-sm text-gray-400">或 OR</span>
+              <div class="flex-1 h-px bg-gray-200"></div>
+            </div>
+
+            <!-- 文本粘贴 -->
+            <div>
+              <label
+                for="textContent"
+                class="block text-sm font-medium text-gray-700 mb-1"
+              >
+                直接粘贴文本 Paste Text Directly
+              </label>
+              <textarea
+                id="textContent"
+                bind:value={textContent}
+                rows="10"
+                disabled={!!txtFile}
+                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                placeholder="在此粘贴文章内容...&#10;Paste your article content here..."
+              ></textarea>
+              <p class="text-xs text-gray-400 mt-1">
+                ⚠️ 服务器将自动生成音频，处理时间取决于文本长度
+              </p>
+            </div>
+          </div>
+        {/if}
 
         <!-- 封面图片 -->
         <div>
