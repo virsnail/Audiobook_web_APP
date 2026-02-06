@@ -43,7 +43,7 @@
     const { textContent, segments } = chapter;
 
     if (!textContent) {
-      return '<div class="chapter-placeholder">加载中...</div>';
+      return '<div class="chapter-placeholder">加载中... Loading...</div>';
     }
 
     if (!segments || segments.length === 0) {

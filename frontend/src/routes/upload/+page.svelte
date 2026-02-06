@@ -76,7 +76,7 @@
 </script>
 
 <svelte:head>
-  <title>上传书籍 - AudioBook</title>
+  <title>上传书籍 Upload Book - AudioBook</title>
 </svelte:head>
 
 <div
@@ -100,7 +100,7 @@
           />
         </svg>
       </a>
-      <h1 class="text-2xl font-bold text-gray-900">上传书籍</h1>
+      <h1 class="text-2xl font-bold text-gray-900">上传书籍 Upload Book</h1>
     </div>
 
     <!-- 上传表单 -->
@@ -112,7 +112,7 @@
             for="title"
             class="block text-sm font-medium text-gray-700 mb-1"
           >
-            书名 <span class="text-red-500">*</span>
+            书名 Title <span class="text-red-500">*</span>
           </label>
           <input
             id="title"
@@ -120,7 +120,7 @@
             bind:value={title}
             required
             class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            placeholder="输入书籍名称"
+            placeholder="输入书籍名称 Enter book title"
           />
         </div>
 
@@ -130,14 +130,14 @@
             for="author"
             class="block text-sm font-medium text-gray-700 mb-1"
           >
-            作者
+            作者 Author
           </label>
           <input
             id="author"
             type="text"
             bind:value={author}
             class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            placeholder="作者名称（可选）"
+            placeholder="作者名称（可选）Author Name (Optional)"
           />
         </div>
 
@@ -147,21 +147,21 @@
             for="description"
             class="block text-sm font-medium text-gray-700 mb-1"
           >
-            简介
+            简介 Description
           </label>
           <textarea
             id="description"
             bind:value={description}
             rows="3"
             class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
-            placeholder="书籍简介（可选）"
+            placeholder="书籍简介（可选）Description (Optional)"
           ></textarea>
         </div>
 
         <!-- ZIP 文件 -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">
-            书籍文件 (ZIP) <span class="text-red-500">*</span>
+            书籍文件 (ZIP) Book File <span class="text-red-500">*</span>
           </label>
           <div
             class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-blue-400 transition-colors"
@@ -229,9 +229,13 @@
                     d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                   />
                 </svg>
-                <p class="text-gray-600">点击选择 ZIP 文件</p>
+                <p class="text-gray-600">
+                  点击选择 ZIP 文件 Click to select ZIP
+                </p>
                 <p class="text-sm text-gray-400 mt-1">
-                  包含 0000001.mp3/txt/json 等章节文件
+                  包含 0000001.mp3/txt/json 等章节文件,也可以包含书籍封面图片。
+                  Contains chapter files such as 0000001.mp3/txt/json, and can
+                  also include book cover image.
                 </p>
               </label>
             {/if}
@@ -241,7 +245,7 @@
         <!-- 封面图片 -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">
-            封面图片（可选）
+            封面图片（可选）Cover Image (Optional)
           </label>
           <div
             class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-blue-400 transition-colors"
@@ -294,7 +298,7 @@
                 for="coverInput"
                 class="cursor-pointer text-gray-500 text-sm"
               >
-                点击选择封面图片
+                点击选择封面图片 Click to select cover
               </label>
             {/if}
           </div>
@@ -332,17 +336,19 @@
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                 ></path>
               </svg>
-              上传中...
+              上传中... Uploading...
             </span>
           {:else}
-            上传书籍
+            上传书籍 Upload Book
           {/if}
         </button>
       </form>
 
       <!-- 帮助信息 -->
       <div class="mt-8 p-4 bg-blue-50 rounded-xl">
-        <h3 class="font-medium text-blue-900 mb-2">ZIP 文件格式说明</h3>
+        <h3 class="font-medium text-blue-900 mb-2">
+          ZIP 文件格式说明 ZIP Format Guide
+        </h3>
         <ul class="text-sm text-blue-700 space-y-1">
           <li>
             • 每个章节需要三个文件：0000001.mp3, 0000001.txt, 0000001.json

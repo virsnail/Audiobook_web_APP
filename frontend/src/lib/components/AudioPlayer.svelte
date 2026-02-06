@@ -506,7 +506,11 @@
     <!-- 中间控制区 -->
     <div class="control-buttons">
       <!-- 后退 15s -->
-      <button class="control-btn" onclick={backward15} title="后退 15 秒">
+      <button
+        class="control-btn"
+        onclick={backward15}
+        title="后退 15 秒 Rewind 15s"
+      >
         <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             stroke-linecap="round"
@@ -528,7 +532,7 @@
       <button
         class="play-btn"
         onclick={togglePlay}
-        title={isPlaying ? "暂停" : "播放"}
+        title={isPlaying ? "暂停 Pause" : "播放 Play"}
       >
         {#if isPlaying}
           <svg class="icon-lg" fill="currentColor" viewBox="0 0 24 24">
@@ -542,7 +546,11 @@
       </button>
 
       <!-- 前进 15s -->
-      <button class="control-btn" onclick={forward15} title="前进 15 秒">
+      <button
+        class="control-btn"
+        onclick={forward15}
+        title="前进 15 秒 Forward 15s"
+      >
         <span class="btn-label">15</span>
         <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
@@ -567,7 +575,7 @@
       <button
         class="speed-btn flex items-center gap-1 !px-3 mr-2 bg-blue-50/50 hover:bg-blue-100 dark:bg-gray-700/50"
         onclick={onLocate}
-        title="滚动到当前朗读位置"
+        title="滚动到当前朗读位置 Locate"
       >
         <svg
           class="icon w-3.5 h-3.5"
@@ -588,7 +596,7 @@
           />
           <!-- Simple target -->
         </svg>
-        <span class="text-xs">跳到朗读处</span>
+        <span class="text-xs">跳到朗读处 Locate</span>
       </button>
 
       <button

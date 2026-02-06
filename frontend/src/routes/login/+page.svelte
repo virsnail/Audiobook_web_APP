@@ -43,7 +43,7 @@
 </script>
 
 <svelte:head>
-  <title>登录 - AudioBook</title>
+  <title>登录 Login - AudioBook</title>
 </svelte:head>
 
 <div
@@ -70,7 +70,7 @@
         </svg>
       </div>
       <h1 class="text-2xl font-bold text-gray-900">AudioBook Reader</h1>
-      <p class="text-gray-500 mt-1">登录你的账户</p>
+      <p class="text-gray-500 mt-1">登录你的账户 Login to your account</p>
     </div>
 
     <!-- 登录表单 -->
@@ -82,7 +82,7 @@
             for="email"
             class="block text-sm font-medium text-gray-700 mb-1"
           >
-            邮箱
+            邮箱 Email
           </label>
           <input
             id="email"
@@ -101,7 +101,7 @@
             for="password"
             class="block text-sm font-medium text-gray-700 mb-1"
           >
-            密码
+            密码 Password
           </label>
           <input
             id="password"
@@ -146,10 +146,10 @@
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                 ></path>
               </svg>
-              登录中...
+              登录中... Logging in...
             </span>
           {:else}
-            登录
+            登录 Login
           {/if}
         </button>
       </form>
@@ -157,12 +157,12 @@
       <!-- 注册链接 -->
       <div class="mt-6 text-center">
         <p class="text-gray-500 text-sm">
-          还没有账户？
+          还没有账户？ No account?
           <a
             href="/register"
             class="text-blue-600 hover:text-blue-700 font-medium"
           >
-            立即注册
+            立即注册 Register Now
           </a>
         </p>
       </div>

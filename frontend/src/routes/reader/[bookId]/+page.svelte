@@ -218,7 +218,7 @@
     <a
       href="/"
       class="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-manipulation text-gray-600 dark:text-gray-400"
-      title="返回书架"
+      title="返回书架 Back to Bookshelf"
     >
       <svg
         class="w-6 h-6"
@@ -242,7 +242,7 @@
       <button
         onclick={() => setFontSize(fontSize - 2)}
         class="p-1.5 px-2 text-sm font-medium hover:bg-white dark:hover:bg-gray-700 rounded-md transition-all text-gray-700 dark:text-gray-300"
-        title="减小字号"
+        title="减小字号 Decrease Font"
       >
         A-
       </button>
@@ -250,7 +250,7 @@
       <button
         onclick={() => setFontSize(fontSize + 2)}
         class="p-1.5 px-2 text-sm font-medium hover:bg-white dark:hover:bg-gray-700 rounded-md transition-all text-gray-700 dark:text-gray-300"
-        title="增大字号"
+        title="增大字号 Increase Font"
       >
         A+
       </button>
@@ -258,7 +258,7 @@
 
     <!-- 书名 -->
     <h1 class="text-lg font-medium truncate flex-1 leading-snug text-center">
-      {data.bookTitle || "未命名书籍"}
+      {data.bookTitle || "未命名书籍 Untitled"}
     </h1>
 
     <!-- 主题切换 (进度左侧) -->
@@ -270,7 +270,7 @@
         onclick={() => setTheme(theme === "light" ? "dark" : "light")}
         class="relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         style="background-color: {theme === 'light' ? '#e5e7eb' : '#374151'};"
-        title="切换主题"
+        title="切换主题 Toggle Theme"
         aria-label="Toggle Theme"
       >
         <span
@@ -308,14 +308,16 @@
       </button>
     </div>
 
-    <!-- 切换到 EPUB 模式按钮 -->
+    <!-- 切换到 EPUB 模式按钮 (暂时隐藏 / Temporary hidden) -->
+    <!--
     <a
       href="/epub-reader/{data.bookId}"
       class="px-3 py-1.5 rounded-lg bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-800 dark:text-green-200 text-sm font-medium transition-colors"
-      title="切换到 EPUB 阅读器"
+      title="切换到 EPUB 阅读器 Switch to EPUB"
     >
       📖 EPUB
     </a>
+    -->
 
     <!-- 全书进度 -->
     <div
