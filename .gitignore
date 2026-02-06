@@ -158,4 +158,4 @@ backups/
 # ~/.cache/whisper/
 # ~/.cache/huggingface/
 
-CLOUD_DEPLOYMENT.md
+docs/CLOUD_DEPLOYMENT.md
