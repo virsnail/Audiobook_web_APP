@@ -301,8 +301,15 @@ async def create_book(
         # 保存封面（可选）
         cover_path = None
         if cover_file:
-            cover_path = f"{storage_path}/cover.jpg"
-            with open(os.path.join(full_path, "cover.jpg"), "wb") as f:
+            # 获取文件扩展名 (默认为 .jpg)
+            ext = os.path.splitext(cover_file.filename)[1].lower()
+            if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                ext = '.jpg'
+            
+            cover_filename = f"cover{ext}"
+            cover_path = f"{storage_path}/{cover_filename}"
+            
+            with open(os.path.join(full_path, cover_filename), "wb") as f:
                 shutil.copyfileobj(cover_file.file, f)
         else:
             # 检查 ZIP 中是否包含封面
@@ -515,6 +522,7 @@ async def create_book_from_text(
     description: Optional[str] = Form(None),
     text_content: Optional[str] = Form(None),
     txt_file: Optional[UploadFile] = File(None),
+    cover_file: Optional[UploadFile] = File(None),  # [NEW] Check for cover
     voice: str = Form("zh-CN-YunyangNeural"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -557,6 +565,20 @@ async def create_book_from_text(
         full_path = os.path.join(settings.MEDIA_PATH, "books", storage_path)
         os.makedirs(full_path, exist_ok=True)
         
+        # 保存封面（可选）
+        cover_path = None
+        if cover_file:
+            # 获取文件扩展名 (默认为 .jpg)
+            ext = os.path.splitext(cover_file.filename)[1].lower()
+            if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                ext = '.jpg'
+            
+            cover_filename = f"cover{ext}"
+            cover_path = f"{storage_path}/{cover_filename}"
+            
+            with open(os.path.join(full_path, cover_filename), "wb") as f:
+                shutil.copyfileobj(cover_file.file, f)
+
         # 保存原始文本
         raw_text_path = os.path.join(full_path, "raw_text.txt")
         with open(raw_text_path, 'w', encoding='utf-8') as f:
@@ -600,6 +622,7 @@ async def create_book_from_text(
             title=title,
             author=author,
             description=description,
+            cover_path=cover_path, # [NEW]
             storage_path=storage_path,
             book_type="txt",
             processing_status="processing",

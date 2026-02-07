@@ -102,6 +102,7 @@
         if (author) formData.append("author", author);
         if (description) formData.append("description", description);
         formData.append("voice", selectedVoice); // 添加语音参数
+        if (coverFile) formData.append("cover_file", coverFile); // [NEW] 添加封面
 
         if (txtFile) {
           formData.append("txt_file", txtFile);
