@@ -467,34 +467,75 @@ corepack prepare pnpm@latest --activate
 
 ---
 
+## 10. 用户邀请码管理
+
+为了限制注册，系统默认开启了邀请码验证。以下是生成和管理邀请码的命令。
+
+### 10.1 生成邀请码
+
+生成 20 个新的邀请码：
+
+```bash
+# 在项目目录下运行
+cd ~/apps/Audiobook_web_APP
+
+# 执行生成脚本
+docker compose exec backend python scripts/create_invite.py
+```
+
+执行后终端会直接输出 20 个有效的邀请码。
+
+### 10.2 查看/管理邀请码 (进阶)
+
+如果需要更复杂的管理（查看已用/未用，或手动添加），可以进入数据库操作：
+
+```bash
+# 1. 进入数据库容器
+docker compose exec db psql -U audiobook -d audiobook
+
+# 2. 查看所有邀请码
+SELECT * FROM invitation_codes;
+
+# 3. 查看未使用的有效邀请码
+SELECT code FROM invitation_codes WHERE is_used = false AND expires_at > NOW();
+
+# 4. 退出数据库
+\q
+
+---
+
 ## 附录: 项目目录结构
 
 ```
+
 Audiobook_web_APP/
-├── .env                    # 环境变量（不提交到 Git）
-├── .env.example            # 环境变量模板
-├── .gitignore              # Git 忽略文件
-├── .venv/                  # Python 虚拟环境（数据准备工具）
-├── Makefile                # 快捷命令
-├── docker-compose.yml      # 生产环境
-├── docker-compose.dev.yml  # 开发环境
+├── .env # 环境变量（不提交到 Git）
+├── .env.example # 环境变量模板
+├── .gitignore # Git 忽略文件
+├── .venv/ # Python 虚拟环境（数据准备工具）
+├── Makefile # 快捷命令
+├── docker-compose.yml # 生产环境
+├── docker-compose.dev.yml # 开发环境
 │
-├── scripts/                # 数据准备工具（MacBook 本地）
-│   ├── prepare_alignment.py
-│   └── requirements.txt
+├── scripts/ # 数据准备工具（MacBook 本地）
+│ ├── prepare_alignment.py
+│ └── requirements.txt
 │
-├── backend/                # FastAPI 后端
-│   ├── .venv/              # 后端虚拟环境
-│   ├── app/
-│   └── requirements.txt
+├── backend/ # FastAPI 后端
+│ ├── .venv/ # 后端虚拟环境
+│ ├── app/
+│ └── requirements.txt
 │
-├── frontend/               # SvelteKit 前端
-│   ├── node_modules/
-│   ├── src/
-│   └── package.json
+├── frontend/ # SvelteKit 前端
+│ ├── node_modules/
+│ ├── src/
+│ └── package.json
 │
-├── nginx/                  # Nginx 配置
-├── media/                  # 媒体文件（挂载卷）
-├── pgdata/                 # 数据库数据（挂载卷）
-└── audiobook_files/        # 测试音频文件（本地，不提交）
+├── nginx/ # Nginx 配置
+├── media/ # 媒体文件（挂载卷）
+├── pgdata/ # 数据库数据（挂载卷）
+└── audiobook_files/ # 测试音频文件（本地，不提交）
+
+```
+
 ```

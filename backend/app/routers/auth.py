@@ -68,8 +68,29 @@ async def send_email_code(
     if settings.DEBUG:
         return {"message": f"验证码已发送（开发模式）: {code}"}
     
-    # 生产环境需要实现邮件发送
-    # await send_email(request.email, "验证码", f"您的验证码是: {code}")
+    # 生产环境发送邮件
+    try:
+        from app.utils.email import send_email
+        await send_email(
+            request.email, 
+            "AudioBook 验证码 / Verification Code", 
+            f"""
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                <h2>您的验证码是 / Your Verification Code</h2>
+                <p style="font-size: 24px; font-weight: bold; color: #4F46E5; letter-spacing: 5px;">{code}</p>
+                <p>该验证码将在 10 分钟后过期。请勿泄露给他人。</p>
+                <p>This code will expire in 10 minutes. Do not share it with anyone.</p>
+            </div>
+            """,
+            is_html=True
+        )
+    except Exception as e:
+        # 如果发送失败，回滚并报错
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"邮件发送失败，请检查配置或稍后再试: {str(e)}"
+        )
     
     return {"message": "验证码已发送到您的邮箱"}
 
