@@ -3,7 +3,7 @@
 -->
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { authStore } from "$lib/stores/auth.svelte";
+  import { authStore } from "$lib/stores/auth.svelte.ts";
   import { uploadBook, uploadTxtBook, logActivity } from "$lib/utils/api";
 
   // 上传模式: 'zip' | 'txt'

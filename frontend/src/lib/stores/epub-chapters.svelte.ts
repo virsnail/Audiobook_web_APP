@@ -78,7 +78,7 @@ class EpubChaptersStore {
 
       // 2. 加载对齐数据 - 使用相对路径通过 nginx 代理
       // 需要添加认证头
-      const { authStore } = await import("$lib/stores/auth.svelte");
+      const { authStore } = await import("$lib/stores/auth.svelte.ts");
       const headers = authStore.getAuthHeader();
       
       const response = await fetch(

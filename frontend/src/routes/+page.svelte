@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import { authStore } from "$lib/stores/auth.svelte";
+  import { authStore } from "$lib/stores/auth.svelte.ts";
   import {
     getBooks,
     deleteBook,
@@ -51,7 +51,118 @@
   let codeSending = $state(false); // [NEW] 验证码发送中
   let countdown = $state(0); // [NEW] 倒计时
 
-  // ... (保留中间代码) ...
+  // 初始化
+  onMount(async () => {
+    await init();
+  });
+
+  async function init() {
+    isLoading = true;
+    try {
+      if (authStore.isLoggedIn) {
+        await loadBooks();
+      }
+    } catch (e) {
+      console.error("Init failed", e);
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  // 加载书籍
+  async function loadBooks() {
+    try {
+      const res = await getBooks();
+      books = res.books;
+      error = "";
+    } catch (err) {
+      console.error("Load books failed", err);
+    }
+  }
+
+  // 点击书籍
+  function handleBookClick(book: Book, e: MouseEvent) {
+    if ((e.target as HTMLElement).closest("button")) return;
+    goto(`/reader/${book.id}`);
+  }
+
+  // 获取封面
+  function getBookCover(book: Book, index: number) {
+    const colors = [
+      "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      "linear-gradient(135deg, #6B8DD6 0%, #8E37D7 100%)",
+      "linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%)",
+      "linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)",
+    ];
+    if (book.cover_path) {
+      return `url('${book.cover_path}')`;
+    }
+    return colors[index % colors.length];
+  }
+
+  // 删除书籍
+  async function handleDelete(id: string) {
+    if (
+      !confirm("确定要删除这本书吗？Are you sure you want to delete this book?")
+    )
+      return;
+    try {
+      await deleteBook(id);
+      await loadBooks();
+    } catch (e) {
+      alert("删除失败 Failed to delete");
+    }
+  }
+
+  // 分享相关
+  async function openShareDialog(id: string) {
+    shareBookId = id;
+    shareEmail = "";
+    shareError = "";
+    shareStatus = null;
+    showShareDialog = true;
+    await loadShareStatus();
+  }
+
+  async function loadShareStatus() {
+    shareStatusLoading = true;
+    try {
+      shareStatus = await getBookShares(shareBookId);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      shareStatusLoading = false;
+    }
+  }
+
+  async function handleShare(isPublic: boolean) {
+    if (!isPublic && !shareEmail) return;
+    shareLoading = true;
+    shareError = "";
+    try {
+      await shareBook(shareBookId, isPublic ? undefined : shareEmail);
+      await loadShareStatus();
+      if (!isPublic) shareEmail = "";
+      alert("分享成功 Shared successfully");
+    } catch (e) {
+      shareError = e instanceof Error ? e.message : "分享失败 Share failed";
+    } finally {
+      shareLoading = false;
+    }
+  }
+
+  async function handleUnshare() {
+    if (!confirm("确定要取消所有分享吗？Unshare all?")) return;
+    shareLoading = true;
+    try {
+      await unshareBook(shareBookId);
+      await loadShareStatus();
+    } catch (e) {
+      alert("取消分享失败 Failed to unshare");
+    } finally {
+      shareLoading = false;
+    }
+  }
 
   // 打开修改密码对话框
   function openPasswordDialog() {
@@ -126,6 +237,20 @@
           : "修改失败 Failed to change password";
     } finally {
       changePasswordLoading = false;
+    }
+  }
+
+  // 退出登录
+  async function handleLogout() {
+    if (!confirm("确定要退出登录吗？Are you sure you want to logout?")) return;
+
+    try {
+      await logout();
+    } catch (e) {
+      console.error("Logout API failed", e);
+    } finally {
+      authStore.logout();
+      goto("/login");
     }
   }
 </script>
