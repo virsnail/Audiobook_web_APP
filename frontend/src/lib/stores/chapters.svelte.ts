@@ -7,7 +7,7 @@
  * - 消除按需加载数据的异步等待
  */
 
-import { authStore } from '$lib/stores/auth.svelte';
+import { authStore } from '$lib/stores/auth.svelte.ts';
 import type { Chapter, ChapterMeta, BookManifest, Segment, ChapterLoadState } from '$lib/types/chapter';
 
 // 章节加载状态 Map

@@ -8,7 +8,7 @@
 
   import { onMount } from "svelte";
   import { epubChaptersStore } from "$lib/stores/epub-chapters.svelte";
-  import { authStore } from "$lib/stores/auth.svelte";
+  import { authStore } from "$lib/stores/auth.svelte.ts";
 
   interface Props {
     bookId: string;

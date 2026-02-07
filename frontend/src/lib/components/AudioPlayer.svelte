@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { authStore } from "$lib/stores/auth.svelte";
+  import { authStore } from "$lib/stores/auth.svelte.ts";
 
   interface Props {
     audioSrc: string;

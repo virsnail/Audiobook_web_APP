@@ -7,7 +7,7 @@ export const ssr = false; // Disable SSR to access authStore
 
 import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
-import { authStore } from '$lib/stores/auth.svelte';
+import { authStore } from '$lib/stores/auth.svelte.ts';
 
 export const load: PageLoad = async ({ params, fetch }) => {
   const bookId = params.bookId;

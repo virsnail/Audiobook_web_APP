@@ -2,7 +2,7 @@
  * API 工具函数
  */
 
-import { authStore } from '$lib/stores/auth.svelte';
+import { authStore } from '$lib/stores/auth.svelte.ts';
 import { browser } from '$app/environment';
 
 const API_BASE = '/api';

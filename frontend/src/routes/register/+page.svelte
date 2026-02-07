@@ -4,7 +4,7 @@
 -->
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { authStore } from "$lib/stores/auth.svelte";
+  import { authStore } from "$lib/stores/auth.svelte.ts";
   import { sendEmailCode, register, getMe } from "$lib/utils/api";
 
   // 当前步骤

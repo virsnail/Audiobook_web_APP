@@ -7,7 +7,7 @@
 export const ssr = false; // Disable SSR to access authStore
 
 import type { BookManifest } from '$lib/types/chapter';
-import { authStore } from '$lib/stores/auth.svelte';
+import { authStore } from '$lib/stores/auth.svelte.ts';
 
 interface LoadParams {
   params: { bookId: string };
