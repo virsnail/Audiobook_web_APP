@@ -12,6 +12,7 @@
     getBookShares,
     unshareBook,
     changePassword,
+    sendEmailCode,
     logout,
     logActivity,
     type Book,
