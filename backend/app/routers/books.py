@@ -487,7 +487,9 @@ async def background_tts_processing(
             
             if book and manifest:
                 book.processing_status = "ready"
-                book.total_duration = int(manifest.get('total_duration', 0))
+                # 兼容 totalDuration (camelCase) 和 total_duration (snake_case)
+                duration = manifest.get('totalDuration') or manifest.get('total_duration', 0)
+                book.total_duration = int(duration)
                 book.total_segments = manifest.get('total_words', 0)
                 await session.commit()
                 logger.info(f"书籍 {book_id} TTS 处理完成")
@@ -741,7 +743,13 @@ async def get_manifest(
     # 如果 manifest.json 存在，直接返回 (TXT书籍)
     if os.path.exists(manifest_path):
         with open(manifest_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            manifest = json.load(f)
+            # 兼容性处理：确保前端需要的字段存在
+            if 'totalDuration' not in manifest and 'total_duration' in manifest:
+                manifest['totalDuration'] = manifest['total_duration']
+            if 'totalChapters' not in manifest and 'total_chapters' in manifest:
+                manifest['totalChapters'] = manifest['total_chapters']
+            return manifest
             
     # 如果不存在，检查是否为 EPUB 书籍并尝试读取 epub_manifest.json
     epub_manifest_path = os.path.join(

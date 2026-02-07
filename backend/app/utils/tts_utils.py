@@ -458,8 +458,8 @@ async def process_text_to_audiobook(
     manifest = {
         "book_title": book_title,
         "created_at": datetime.now().isoformat(),
-        "total_chapters": len(chapters_info),
-        "total_duration": round(sum(ch.get('duration', 0) for ch in chapters_info), 2),
+        "totalChapters": len(chapters_info),
+        "totalDuration": round(sum(ch.get('duration', 0) for ch in chapters_info), 2),
         "total_words": sum(ch.get('words', 0) for ch in chapters_info),
         "chapters": chapters_info
     }
@@ -468,6 +468,6 @@ async def process_text_to_audiobook(
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
     
-    logger.info(f"有声书生成完成: {len(chapters_info)} 章节, 总时长 {manifest['total_duration']/60:.1f} 分钟")
+    logger.info(f"有声书生成完成: {len(chapters_info)} 章节, 总时长 {manifest['totalDuration']/60:.1f} 分钟")
     
     return manifest
