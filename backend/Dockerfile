@@ -17,8 +17,11 @@ COPY . .
 # 设置启动脚本权限
 RUN chmod +x start.sh
 
-# 创建用户但不切换（将在 start.sh 中切换）
+# 创建用户
 RUN useradd -m -u 1000 appuser
+
+# 确保 appuser 拥有代码目录的所有权
+RUN chown -R appuser:appuser /app
 
 EXPOSE 8000
 
