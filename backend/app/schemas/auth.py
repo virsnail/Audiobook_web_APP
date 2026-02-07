@@ -26,3 +26,4 @@ class RegisterRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     new_password: str
+    email_code: str

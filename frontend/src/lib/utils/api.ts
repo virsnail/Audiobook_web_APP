@@ -96,10 +96,13 @@ export async function createInvitationCodes(count: number = 1): Promise<{ codes:
 }
 
 // 修改密码
-export async function changePassword(newPassword: string): Promise<{ message: string }> {
+export async function changePassword(newPassword: string, emailCode: string): Promise<{ message: string }> {
   return request('/auth/change-password', {
     method: 'PUT',
-    body: JSON.stringify({ new_password: newPassword }),
+    body: JSON.stringify({ 
+      new_password: newPassword,
+      email_code: emailCode
+    }),
   });
 }
 

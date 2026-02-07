@@ -264,8 +264,29 @@ async def change_password(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """修改当前用户密码（无需旧密码）"""
+    """修改当前用户密码（需邮箱验证码）"""
+    # 验证邮箱验证码
+    result = await db.execute(
+        select(EmailVerification)
+        .where(EmailVerification.email == current_user.email)
+        .where(EmailVerification.code == request.email_code)
+        .where(EmailVerification.is_used == False)
+        .where(EmailVerification.expires_at > datetime.utcnow())
+    )
+    verification = result.scalar_one_or_none()
+    
+    if not verification:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="邮箱验证码无效或已过期"
+        )
+
+    # 修改密码
     current_user.password_hash = get_password_hash(request.new_password)
+    
+    # 标记验证码已使用
+    verification.is_used = True
+    
     await db.commit()
     
     return {"message": "密码修改成功"}

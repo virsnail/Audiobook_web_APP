@@ -489,7 +489,7 @@ docker compose exec backend python scripts/create_invite.py
 
 如果需要更复杂的管理（查看已用/未用，或手动添加），可以进入数据库操作：
 
-```bash
+````bash
 # 1. 进入数据库容器
 docker compose exec db psql -U audiobook -d audiobook
 
@@ -501,6 +501,36 @@ SELECT code FROM invitation_codes WHERE is_used = false AND expires_at > NOW();
 
 # 4. 退出数据库
 \q
+
+## 11. 用户与数据管理 (高级)
+
+系统包含两个用于管理用户和审计数据的脚本，通常在 Docker 环境中运行，但也可以在本地虚拟环境运行。
+
+### 11.1 运行方式
+
+**方式 A: Docker 环境 (推荐)**
+
+```bash
+# 列出用户
+docker compose -f docker-compose.dev.yml exec backend python scripts/manage_users.py list
+
+# 删除用户
+docker compose -f docker-compose.dev.yml exec backend python scripts/manage_users.py delete user@example.com
+
+# 数据审计
+docker compose -f docker-compose.dev.yml exec backend python scripts/audit_data.py
+````
+
+**方式 B: 本地虚拟环境**
+
+```bash
+cd backend
+source .venv/bin/activate
+export DATABASE_URL=postgresql+asyncpg://audiobook:audiobook@localhost:5433/audiobook
+export MEDIA_PATH=../media  # 确保路径正确
+
+python scripts/manage_users.py list
+```
 
 ---
 
@@ -535,6 +565,8 @@ Audiobook_web_APP/
 ├── media/ # 媒体文件（挂载卷）
 ├── pgdata/ # 数据库数据（挂载卷）
 └── audiobook_files/ # 测试音频文件（本地，不提交）
+
+```
 
 ```
 
