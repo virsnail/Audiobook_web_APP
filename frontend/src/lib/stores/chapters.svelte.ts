@@ -58,6 +58,11 @@ function initFromManifest(manifest: BookManifest, basePath: string = '/sample') 
 
   baseUrl = basePath;
   totalDuration = manifest.totalDuration;
+  console.log('📚 initFromManifest', { 
+    totalDuration, 
+    chaptersCount: manifest.chapters.length,
+    manifestTotalDuration: manifest.totalDuration 
+  });
   globalSegmentCounter = 0;
   
   let globalTime = 0;
