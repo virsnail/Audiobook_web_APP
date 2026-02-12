@@ -3,6 +3,7 @@
   三步流程：邀请码 → 邮箱验证 → 设置密码
 -->
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import { sendEmailCode, register, getMe } from "$lib/utils/api";
@@ -23,6 +24,15 @@
   let isLoading = $state(false);
   let codeSent = $state(false);
   let countdown = $state(0);
+  let _countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+  // 组件销毁时清理定时器，防止内存泄漏
+  onDestroy(() => {
+    if (_countdownTimer) {
+      clearInterval(_countdownTimer);
+      _countdownTimer = null;
+    }
+  });
 
   // 验证邀请码格式
   function validateInvitationCode(): boolean {
@@ -63,12 +73,14 @@
         }
       }
 
-      // 倒计时
+      // 倒计时（组件销毁时自动清理）
       countdown = 60;
-      const timer = setInterval(() => {
+      if (_countdownTimer) clearInterval(_countdownTimer);
+      _countdownTimer = setInterval(() => {
         countdown--;
         if (countdown <= 0) {
-          clearInterval(timer);
+          clearInterval(_countdownTimer!);
+          _countdownTimer = null;
         }
       }, 1000);
     } catch (err) {

@@ -88,7 +88,7 @@
           class="w-full h-full border-0"
           title={currentChapter.title}
           onload={handleIframeLoad}
-          sandbox="allow-same-origin allow-scripts allow-popups"
+          sandbox="allow-same-origin allow-popups"
         ></iframe>
       {:else}
         <div class="flex items-center justify-center h-full text-gray-400">

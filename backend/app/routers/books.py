@@ -8,10 +8,12 @@ import re
 from typing import Optional, List
 from mutagen.mp3 import MP3
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request, BackgroundTasks, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, delete
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User
@@ -24,6 +26,67 @@ from app.services.activity_logger import ActivityLogger
 from app.database import AsyncSessionLocal
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
+# ========== 安全常量 ==========
+MAX_TITLE_LENGTH = 500
+MAX_AUTHOR_LENGTH = 200
+MAX_DESCRIPTION_LENGTH = 5000
+MAX_TEXT_CONTENT_LENGTH = 10_000_000  # 10MB 文本
+MAX_COVER_SIZE = 10 * 1024 * 1024     # 10MB 封面
+MAX_TXT_FILE_SIZE = 50 * 1024 * 1024  # 50MB 文本文件
+ALLOWED_COVER_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+# Edge-TTS 允许的语音列表（仅中英文常用）
+ALLOWED_TTS_VOICES = {
+    "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural", "zh-CN-YunyangNeural",
+    "zh-CN-XiaoyiNeural", "zh-CN-YunjianNeural", "zh-CN-XiaochenNeural",
+    "zh-CN-XiaohanNeural", "zh-CN-XiaomengNeural", "zh-CN-XiaomoNeural",
+    "zh-CN-XiaoqiuNeural", "zh-CN-XiaoruiNeural", "zh-CN-XiaoshuangNeural",
+    "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural", "zh-CN-XiaozhenNeural",
+    "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural", "zh-CN-YunxiaNeural",
+    "zh-CN-YunzeNeural", "zh-CN-liaoning-XiaobeiNeural",
+    "zh-TW-HsiaoChenNeural", "zh-TW-YunJheNeural", "zh-TW-HsiaoYuNeural",
+    "en-US-JennyNeural", "en-US-GuyNeural", "en-US-AriaNeural",
+    "en-US-DavisNeural", "en-US-AmberNeural", "en-US-AnaNeural",
+    "en-US-AndrewNeural", "en-US-BrianNeural", "en-US-ChristopherNeural",
+    "en-US-CoraNeural", "en-US-ElizabethNeural", "en-US-EmmaNeural",
+    "en-US-EricNeural", "en-US-JacobNeural", "en-US-MichelleNeural",
+    "en-US-MonicaNeural", "en-US-RogerNeural", "en-US-SaraNeural",
+    "en-US-SteffanNeural", "en-GB-SoniaNeural", "en-GB-RyanNeural",
+}
+
+
+def validate_chapter_id(chapter_id: str) -> str:
+    """
+    验证 chapter_id，防止路径穿越攻击
+    只允许字母、数字、下划线和短横线
+    """
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', chapter_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的章节 ID"
+        )
+    if len(chapter_id) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="章节 ID 过长"
+        )
+    return chapter_id
+
+
+def validate_safe_path(target_path: str, base_path: str) -> str:
+    """
+    验证目标路径在 base_path 内，防止路径穿越
+    返回安全的绝对路径
+    """
+    abs_target = os.path.abspath(target_path)
+    abs_base = os.path.abspath(base_path)
+    if not abs_target.startswith(abs_base + os.sep) and abs_target != abs_base:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="路径访问被拒绝"
+        )
+    return abs_target
 
 
 def get_mp3_duration(file_path: str) -> float:
@@ -246,14 +309,15 @@ async def get_books(
 
 
 @router.post("", response_model=BookResponse, summary="上传新书籍（ZIP格式）")
+@limiter.limit("10/minute")  # 每分钟最多 10 次上传
 async def create_book(
-    title: str = Form(...),
-    author: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
+    request: Request,
+    title: str = Form(..., min_length=1, max_length=MAX_TITLE_LENGTH),
+    author: Optional[str] = Form(None, max_length=MAX_AUTHOR_LENGTH),
+    description: Optional[str] = Form(None, max_length=MAX_DESCRIPTION_LENGTH),
     book_zip: UploadFile = File(..., description="包含多章节文件的 ZIP (支持: 0000001.mp3/txt/json 或 ch001_audio.mp3/text.txt/align.json)"),
     cover_file: Optional[UploadFile] = File(None),
     background_tasks: BackgroundTasks = None,  # Inject
-    request: Request = None,  # Inject
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -516,12 +580,13 @@ async def background_tts_processing(
 
 
 @router.post("/from-text", response_model=BookResponse, summary="从文本创建有声书")
+@limiter.limit("5/minute")  # 每分钟最多 5 次 TTS 创建
 async def create_book_from_text(
     background_tasks: BackgroundTasks,
     request: Request,
-    title: str = Form(...),
-    author: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
+    title: str = Form(..., min_length=1, max_length=MAX_TITLE_LENGTH),
+    author: Optional[str] = Form(None, max_length=MAX_AUTHOR_LENGTH),
+    description: Optional[str] = Form(None, max_length=MAX_DESCRIPTION_LENGTH),
     text_content: Optional[str] = Form(None),
     txt_file: Optional[UploadFile] = File(None),
     cover_file: Optional[UploadFile] = File(None),  # [NEW] Check for cover
@@ -542,17 +607,35 @@ async def create_book_from_text(
     - 按时长自动分割章节
     """
     try:
+        # 安全：验证 TTS 语音是否在白名单中
+        if voice not in ALLOWED_TTS_VOICES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"不支持的语音：{voice}"
+            )
+        
         # 获取文本内容
         raw_text = None
         
         if txt_file and txt_file.filename:
-            # 从上传的文件读取
+            # 安全：检查文件大小
             content = await txt_file.read()
+            if len(content) > MAX_TXT_FILE_SIZE:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"文本文件过大，最大允许 {MAX_TXT_FILE_SIZE // 1024 // 1024}MB"
+                )
             try:
                 raw_text = content.decode('utf-8')
             except UnicodeDecodeError:
                 raw_text = content.decode('gbk', errors='ignore')
         elif text_content:
+            # 安全：检查粘贴文本长度
+            if len(text_content) > MAX_TEXT_CONTENT_LENGTH:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"文本内容过长，最大允许 {MAX_TEXT_CONTENT_LENGTH // 1_000_000}MB"
+                )
             raw_text = text_content
         
         if not raw_text or not raw_text.strip():
@@ -795,6 +878,8 @@ async def get_chapter_audio(
     db: AsyncSession = Depends(get_db)
 ):
     """获取指定章节的音频文件"""
+    # 安全：验证 chapter_id，防止路径穿越
+    validate_chapter_id(chapter_id)
     result = await db.execute(select(Book).where(Book.id == book_id))
     book = result.scalar_one_or_none()
     
@@ -902,6 +987,9 @@ async def get_chapter_text(
     db: AsyncSession = Depends(get_db)
 ):
     """获取指定章节的文本内容"""
+    # 安全：验证 chapter_id，防止路径穿越
+    validate_chapter_id(chapter_id)
+    
     result = await db.execute(select(Book).where(Book.id == book_id))
     book = result.scalar_one_or_none()
     
@@ -958,6 +1046,9 @@ async def get_chapter_alignment(
     db: AsyncSession = Depends(get_db)
 ):
     """获取指定章节的音频-文本对齐数据"""
+    # 安全：验证 chapter_id，防止路径穿越
+    validate_chapter_id(chapter_id)
+    
     result = await db.execute(select(Book).where(Book.id == book_id))
     book = result.scalar_one_or_none()
     
@@ -1506,9 +1597,10 @@ async def unshare_book(
 @router.get("/{book_id}/cover", summary="获取书籍封面")
 async def get_book_cover(
     book_id: uuid.UUID,
+    current_user: User = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取书籍封面图片"""
+    """获取书籍封面图片（需要鉴权：书籍拥有者、被分享者或公开书籍）"""
     result = await db.execute(select(Book).where(Book.id == book_id))
     book = result.scalar_one_or_none()
     
@@ -1516,6 +1608,28 @@ async def get_book_cover(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="书籍不存在"
+        )
+    
+    # 安全：验证访问权限（拥有者、被分享者或公开书籍）
+    has_access = book.is_public
+    if current_user:
+        if book.owner_id == current_user.id:
+            has_access = True
+        else:
+            # 检查是否被分享
+            share_result = await db.execute(
+                select(BookShare).where(
+                    BookShare.book_id == book_id,
+                    BookShare.shared_to_id == current_user.id
+                )
+            )
+            if share_result.scalar_one_or_none():
+                has_access = True
+    
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权访问此书籍封面"
         )
     
     if not book.cover_path:

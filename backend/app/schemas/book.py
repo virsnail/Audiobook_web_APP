@@ -1,13 +1,13 @@
-from pydantic import BaseModel, Json
+from pydantic import BaseModel, Json, Field
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, List
 
 
 class BookBase(BaseModel):
-    title: str
-    author: Optional[str] = None
-    description: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=500)
+    author: Optional[str] = Field(None, max_length=200)
+    description: Optional[str] = Field(None, max_length=5000)
 
 
 class BookCreate(BookBase):
@@ -35,9 +35,9 @@ class BookListResponse(BaseModel):
 
 
 class BookProgressUpdate(BaseModel):
-    current_position: float
-    current_segment: int
-    playback_speed: float = 1.0
+    current_position: float = Field(..., ge=0, le=360000, description="播放位置（秒），最大 100 小时")
+    current_segment: int = Field(..., ge=0, le=1_000_000, description="当前 segment 索引")
+    playback_speed: float = Field(1.0, ge=0.25, le=4.0, description="播放速度 0.25x-4x")
 
 
 class BookProgressResponse(BaseModel):

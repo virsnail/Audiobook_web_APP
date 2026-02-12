@@ -96,6 +96,18 @@
   // 当前高亮的 segment 全局 ID
   let currentHighlightId = $state(-1);
 
+  // ========== 安全限制常量 ==========
+  // 防止超大文本或异常数据导致浏览器卡死
+  const SAFETY_LIMITS = {
+    MAX_TEXT_LENGTH: 500_000,      // 单章节最大字符数（500KB）
+    MAX_LINES: 20_000,             // formatWithCodeBlocks 最大处理行数
+    MAX_CODE_LINES: 5_000,         // 单个代码块最大行数
+    MAX_SEGMENTS: 10_000,          // renderChapter 最大 segment 数
+    MAX_CODE_BLOCKS_HIGHLIGHT: 100,// hljs 单次最大高亮代码块数
+    MAX_RENDER_TIME_MS: 3_000,     // 单次渲染超时（毫秒）
+    HIGHLIGHT_THROTTLE_MS: 250,    // updateHighlight 节流间隔
+  } as const;
+
   // HTML 转义
   function escapeHtml(text: string): string {
     return text
@@ -168,6 +180,7 @@
 
   /**
    * 将原始 HTML 字符串转换为段落，支持 Markdown 代码块（```...```）和行内代码（`...`）
+   * 内含安全限制：超过最大行数或超时时停止处理
    */
   function formatWithCodeBlocks(rawHtml: string): string {
     const lines = rawHtml.split("\n");
@@ -176,7 +189,24 @@
     let codeLines: string[] = [];
     let codeLanguage = "";
 
-    for (const line of lines) {
+    // 安全限制：行数检查
+    const maxLines = Math.min(lines.length, SAFETY_LIMITS.MAX_LINES);
+    if (lines.length > SAFETY_LIMITS.MAX_LINES) {
+      console.warn(`[安全限制] formatWithCodeBlocks: 文本行数 ${lines.length} 超过限制 ${SAFETY_LIMITS.MAX_LINES}，截断处理`);
+    }
+
+    const startTime = performance.now();
+
+    for (let idx = 0; idx < maxLines; idx++) {
+      // 安全限制：超时检查（每 500 行检查一次）
+      if (idx > 0 && idx % 500 === 0) {
+        if (performance.now() - startTime > SAFETY_LIMITS.MAX_RENDER_TIME_MS) {
+          console.warn(`[安全限制] formatWithCodeBlocks: 处理耗时超过 ${SAFETY_LIMITS.MAX_RENDER_TIME_MS}ms，已处理 ${idx}/${maxLines} 行，停止`);
+          break;
+        }
+      }
+
+      const line = lines[idx];
       // 提取纯文本（去掉 HTML 标签）来检测 ```
       const plainLine = line.replace(/<[^>]+>/g, "").trim();
 
@@ -192,7 +222,10 @@
         codeLanguage = "";
         codeLines = [];
       } else if (inCodeBlock) {
-        codeLines.push(line);
+        // 安全限制：单个代码块行数
+        if (codeLines.length < SAFETY_LIMITS.MAX_CODE_LINES) {
+          codeLines.push(line);
+        }
       } else {
         if (line.trim()) {
           // 处理行内代码：`...` → <code class="inline-code">...</code>
@@ -213,7 +246,7 @@
     return output;
   }
 
-  // 渲染单个章节的 HTML
+  // 渲染单个章节的 HTML（含安全限制）
   function renderChapter(chapter: Chapter): string {
     const { textContent, segments } = chapter;
 
@@ -221,26 +254,51 @@
       return '<div class="chapter-placeholder">加载中... Loading...</div>';
     }
 
+    // 安全限制：文本长度检查
+    let safeText = textContent;
+    if (textContent.length > SAFETY_LIMITS.MAX_TEXT_LENGTH) {
+      console.warn(`[安全限制] renderChapter: 文本长度 ${textContent.length} 超过限制 ${SAFETY_LIMITS.MAX_TEXT_LENGTH}，截断处理`);
+      safeText = textContent.substring(0, SAFETY_LIMITS.MAX_TEXT_LENGTH) + "\n\n[... 文本过长，已截断 ...]";
+    }
+
     if (!segments || segments.length === 0) {
       // 没有对齐数据，简单渲染文本（支持代码块）
-      const escaped = textContent
+      const escaped = safeText
         .split("\n")
         .map((line) => escapeHtml(line))
         .join("\n");
       return formatWithCodeBlocks(escaped);
     }
 
+    // 安全限制：segment 数量检查
+    const safeSegments = segments.length > SAFETY_LIMITS.MAX_SEGMENTS
+      ? segments.slice(0, SAFETY_LIMITS.MAX_SEGMENTS)
+      : segments;
+    if (segments.length > SAFETY_LIMITS.MAX_SEGMENTS) {
+      console.warn(`[安全限制] renderChapter: segment 数量 ${segments.length} 超过限制 ${SAFETY_LIMITS.MAX_SEGMENTS}，截断处理`);
+    }
+
     // 有对齐数据，精确匹配渲染
     let result = "";
     let textPos = 0;
+    const startTime = performance.now();
 
-    for (const seg of segments) {
-      const foundIndex = textContent.indexOf(seg.text, textPos);
+    for (let i = 0; i < safeSegments.length; i++) {
+      // 安全限制：超时检查（每 500 个 segment 检查一次）
+      if (i > 0 && i % 500 === 0) {
+        if (performance.now() - startTime > SAFETY_LIMITS.MAX_RENDER_TIME_MS) {
+          console.warn(`[安全限制] renderChapter: segment 匹配耗时超过 ${SAFETY_LIMITS.MAX_RENDER_TIME_MS}ms，已处理 ${i}/${safeSegments.length}，停止`);
+          break;
+        }
+      }
+
+      const seg = safeSegments[i];
+      const foundIndex = safeText.indexOf(seg.text, textPos);
 
       if (foundIndex !== -1) {
         // 添加未匹配的文本
         if (foundIndex > textPos) {
-          result += escapeHtml(textContent.substring(textPos, foundIndex));
+          result += escapeHtml(safeText.substring(textPos, foundIndex));
         }
 
         // 添加可点击的 segment
@@ -253,8 +311,8 @@
     }
 
     // 剩余文本
-    if (textPos < textContent.length) {
-      result += escapeHtml(textContent.substring(textPos));
+    if (textPos < safeText.length) {
+      result += escapeHtml(safeText.substring(textPos));
     }
 
     // 转换为段落（支持代码块）
@@ -282,9 +340,23 @@
     });
   }
 
-  // 更新高亮
+  // 更新高亮（含节流保护）
+  let _highlightTimer: ReturnType<typeof setTimeout> | null = null;
+  let _lastHighlightTime = 0;
+
   function updateHighlight() {
     if (!containerRef) return;
+
+    // 节流：两次调用间隔不得小于 HIGHLIGHT_THROTTLE_MS
+    const now = performance.now();
+    if (now - _lastHighlightTime < SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS) {
+      // 延迟执行，确保最新一次更新不丢失
+      if (_highlightTimer) clearTimeout(_highlightTimer);
+      _highlightTimer = setTimeout(updateHighlight, SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS);
+      return;
+    }
+    _lastHighlightTime = now;
+    _highlightTimer = null;
 
     // 移除旧高亮
     const oldHighlight = containerRef.querySelector(".segment.active");
@@ -394,31 +466,43 @@
     updateHighlight();
   });
 
-  // hljs 加载完成后，对页面上已有的代码块进行语法高亮
+  // hljs 加载完成后，对页面上已有的代码块进行语法高亮（含数量限制）
   $effect(() => {
     if (hljs && containerRef) {
-      containerRef
-        .querySelectorAll(".code-block pre code:not(.hljs)")
-        .forEach((block) => {
-          const lang = (
-            block.closest(".code-block") as HTMLElement
-          )?.dataset.language;
-          if (lang) {
-            try {
-              const langLower = lang.toLowerCase();
-              if (hljs.getLanguage(langLower)) {
-                const raw = block.textContent || "";
-                const highlighted = hljs.highlight(raw, {
-                  language: langLower,
-                }).value;
-                block.innerHTML = highlighted;
-                block.classList.add("hljs");
+      const blocks = containerRef.querySelectorAll(".code-block pre code:not(.hljs)");
+      const maxBlocks = Math.min(blocks.length, SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT);
+      if (blocks.length > SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT) {
+        console.warn(`[安全限制] hljs: 代码块数量 ${blocks.length} 超过限制 ${SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT}，仅高亮前 ${maxBlocks} 个`);
+      }
+
+      for (let i = 0; i < maxBlocks; i++) {
+        const block = blocks[i];
+        const lang = (
+          block.closest(".code-block") as HTMLElement
+        )?.dataset.language;
+        if (lang) {
+          try {
+            const langLower = lang.toLowerCase();
+            if (hljs.getLanguage(langLower)) {
+              const raw = block.textContent || "";
+              // 安全限制：单个代码块内容过大时跳过高亮
+              if (raw.length > 50_000) {
+                console.warn(`[安全限制] hljs: 代码块内容过大 (${raw.length} 字符)，跳过高亮`);
+                block.classList.add("hljs"); // 标记为已处理，避免反复尝试
+                continue;
               }
-            } catch {
-              /* 高亮失败，保持原样 */
+              const highlighted = hljs.highlight(raw, {
+                language: langLower,
+              }).value;
+              block.innerHTML = highlighted;
+              block.classList.add("hljs");
             }
+          } catch {
+            /* 高亮失败，保持原样 */
+            block.classList.add("hljs"); // 标记为已处理
           }
-        });
+        }
+      }
     }
   });
 
@@ -429,6 +513,11 @@
 
   onDestroy(() => {
     observer?.disconnect();
+    // 清理节流定时器
+    if (_highlightTimer) {
+      clearTimeout(_highlightTimer);
+      _highlightTimer = null;
+    }
   });
 </script>
 

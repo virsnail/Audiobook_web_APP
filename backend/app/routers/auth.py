@@ -7,6 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User, InvitationCode, EmailVerification
@@ -14,12 +16,12 @@ from app.schemas.auth import Token, EmailCodeRequest, RegisterRequest, ChangePas
 from app.schemas.user import UserLogin, UserResponse
 from app.utils.security import verify_password, get_password_hash, create_access_token
 from app.utils.deps import get_current_user
-from app.utils.deps import get_current_user
 from app.config import settings
 from app.services.activity_logger import ActivityLogger
 from app.database import AsyncSessionLocal
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 def generate_email_code() -> str:
@@ -33,8 +35,10 @@ def generate_invitation_code() -> str:
 
 
 @router.post("/send-code", summary="发送邮箱验证码")
+@limiter.limit("3/minute")  # 每分钟最多 3 次
 async def send_email_code(
     request: EmailCodeRequest,
+    request_obj: Request,  # slowapi 需要 Request 对象
     db: AsyncSession = Depends(get_db)
 ):
     """发送邮箱验证码"""
@@ -96,8 +100,10 @@ async def send_email_code(
 
 
 @router.post("/register", response_model=Token, summary="用户注册")
+@limiter.limit("5/minute")  # 每分钟最多 5 次注册尝试
 async def register(
     request: RegisterRequest,
+    request_obj: Request,  # slowapi 需要 Request 对象
     db: AsyncSession = Depends(get_db)
 ):
     """用户注册（需要邀请码和邮箱验证码）"""
@@ -169,6 +175,7 @@ async def register(
 
 
 @router.post("/login", response_model=Token, summary="用户登录")
+@limiter.limit("10/minute")  # 每分钟最多 10 次登录尝试（防暴力破解）
 async def login(
     request: UserLogin,
     background_tasks: BackgroundTasks,
