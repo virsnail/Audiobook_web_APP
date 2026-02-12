@@ -79,6 +79,37 @@ async def get_current_user_optional(
     return user if user and user.is_active else None
 
 
+async def get_current_user_optional_token_or_query(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """获取当前用户（可选，支持 Header Bearer 或 Query Param token，无 token 时返回 None）"""
+    access_token = None
+    
+    if credentials:
+        access_token = credentials.credentials
+    elif token:
+        access_token = token
+    
+    if not access_token:
+        return None
+    
+    user_id = decode_token(access_token)
+    if not user_id:
+        return None
+    
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        return None
+    
+    result = await db.execute(select(User).where(User.id == user_uuid))
+    user = result.scalar_one_or_none()
+    
+    return user if user and user.is_active else None
+
+
 async def get_current_user_token_or_query(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     token: Optional[str] = Query(None),

@@ -19,7 +19,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.book import Book, BookShare, ReadingProgress
 from app.schemas.book import BookResponse, BookListResponse, BookProgressUpdate, BookProgressResponse
-from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query
+from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query, get_current_user_optional_token_or_query
 from app.config import settings
 from app.utils import epub_utils  # 方案2: EPUB processing
 from app.services.activity_logger import ActivityLogger
@@ -1597,7 +1597,7 @@ async def unshare_book(
 @router.get("/{book_id}/cover", summary="获取书籍封面")
 async def get_book_cover(
     book_id: uuid.UUID,
-    current_user: User = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user_optional_token_or_query),
     db: AsyncSession = Depends(get_db)
 ):
     """获取书籍封面图片（需要鉴权：书籍拥有者、被分享者或公开书籍）"""

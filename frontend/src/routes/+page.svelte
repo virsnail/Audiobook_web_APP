@@ -104,7 +104,8 @@
       "linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)",
     ];
     if (book.cover_path) {
-      return `url('/api/books/${book.id}/cover')`;
+      const token = authStore.token || '';
+      return `url('/api/books/${book.id}/cover?token=${token}')`;
     }
     return colors[index % colors.length];
   }
