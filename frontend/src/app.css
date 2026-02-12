@@ -14,6 +14,21 @@
   --reader-font-size: 18px; /* Default font size */
   --reader-highlight: rgba(243, 112, 33, 0.2); /* Hermès Orange light */
   --reader-highlight-hover: rgba(243, 112, 33, 0.15);
+  --reader-code-bg: #f6f8fa;
+  --reader-code-border: #e1e4e8;
+  --reader-code-font-size: 0.85em; /* 代码块字体大小，相对于正文。可手动调整，如 0.7em 更小，0.85em 更大 */
+  --reader-code-line-height: 1.1; /* 代码块行间距。可手动调整，如 1.1 更紧凑，1.4 更宽松，1.6 接近正文 */
+  --reader-code-padding: 6px 12px; /* 代码块内边距（上下 左右）。可手动调整，如 4px 12px 更紧凑 */
+  /* 语法高亮颜色 (GitHub Light) */
+  --hljs-keyword: #d73a49;
+  --hljs-string: #032f62;
+  --hljs-comment: #6a737d;
+  --hljs-function: #6f42c1;
+  --hljs-number: #005cc5;
+  --hljs-builtin: #e36209;
+  --hljs-attr: #005cc5;
+  --hljs-variable: #e36209;
+  --hljs-meta: #005cc5;
 }
 
 /* 暗色模式变量 (手动触发) */
@@ -23,6 +38,18 @@
   --reader-muted: #6b7280;
   --reader-highlight: rgba(243, 112, 33, 0.3);
   --reader-highlight-hover: rgba(243, 112, 33, 0.25);
+  --reader-code-bg: #282c34;
+  --reader-code-border: #3e3e42;
+  /* 语法高亮颜色 (GitHub Dark) */
+  --hljs-keyword: #ff7b72;
+  --hljs-string: #a5d6ff;
+  --hljs-comment: #8b949e;
+  --hljs-function: #d2a8ff;
+  --hljs-number: #79c0ff;
+  --hljs-builtin: #ffa657;
+  --hljs-attr: #79c0ff;
+  --hljs-variable: #ffa657;
+  --hljs-meta: #79c0ff;
 }
 
 /* 基础样式 */
