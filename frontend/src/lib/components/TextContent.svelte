@@ -13,6 +13,74 @@
   import { chaptersStore } from "$lib/stores/chapters.svelte";
   import type { Chapter } from "$lib/types/chapter";
 
+  // 语法高亮（onMount 中异步加载，出错时优雅降级为纯文本）
+  let hljs: any = $state(null);
+
+  /**
+   * 异步初始化 highlight.js（在 onMount 中调用）
+   * 加载完成后，hljs 状态更新会触发已渲染代码块的重新高亮
+   */
+  async function initHighlightJs() {
+    try {
+      const mod = await import("highlight.js/lib/core");
+      const core = mod.default;
+
+      // 注册常用语言
+      const langs: [string, () => Promise<any>][] = [
+        ["python", () => import("highlight.js/lib/languages/python")],
+        [
+          "javascript",
+          () => import("highlight.js/lib/languages/javascript"),
+        ],
+        [
+          "typescript",
+          () => import("highlight.js/lib/languages/typescript"),
+        ],
+        ["bash", () => import("highlight.js/lib/languages/bash")],
+        ["shell", () => import("highlight.js/lib/languages/shell")],
+        ["json", () => import("highlight.js/lib/languages/json")],
+        ["xml", () => import("highlight.js/lib/languages/xml")],
+        ["css", () => import("highlight.js/lib/languages/css")],
+        ["sql", () => import("highlight.js/lib/languages/sql")],
+        ["java", () => import("highlight.js/lib/languages/java")],
+        ["c", () => import("highlight.js/lib/languages/c")],
+        ["cpp", () => import("highlight.js/lib/languages/cpp")],
+        ["go", () => import("highlight.js/lib/languages/go")],
+        ["rust", () => import("highlight.js/lib/languages/rust")],
+        ["yaml", () => import("highlight.js/lib/languages/yaml")],
+        [
+          "markdown",
+          () => import("highlight.js/lib/languages/markdown"),
+        ],
+        ["diff", () => import("highlight.js/lib/languages/diff")],
+        ["http", () => import("highlight.js/lib/languages/http")],
+      ];
+      for (const [name, loader] of langs) {
+        try {
+          const langMod = await loader();
+          core.registerLanguage(name, langMod.default);
+        } catch {
+          /* 忽略单个语言注册失败 */
+        }
+      }
+      // 常见别名
+      core.registerAliases(["py"], { languageName: "python" });
+      core.registerAliases(["js"], { languageName: "javascript" });
+      core.registerAliases(["ts"], { languageName: "typescript" });
+      core.registerAliases(["sh", "zsh"], { languageName: "bash" });
+      core.registerAliases(["html", "htm", "xhtml"], {
+        languageName: "xml",
+      });
+      core.registerAliases(["yml"], { languageName: "yaml" });
+      core.registerAliases(["md"], { languageName: "markdown" });
+
+      // 赋值触发响应式更新，使已渲染的代码块重新高亮
+      hljs = core;
+    } catch {
+      hljs = null; // highlight.js 加载失败，降级为纯文本
+    }
+  }
+
   interface Props {
     currentGlobalTime?: number; // 当前全局播放时间
     isPlaying?: boolean; // 音频是否正在播放
@@ -38,6 +106,113 @@
       .replace(/'/g, "&#039;");
   }
 
+  // HTML 反转义（用于将已转义文本还原后传给 highlight.js）
+  function unescapeHtml(text: string): string {
+    return text
+      .replace(/&#039;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&gt;/g, ">")
+      .replace(/&lt;/g, "<")
+      .replace(/&amp;/g, "&");
+  }
+
+  /**
+   * 尝试对代码进行语法高亮，失败时返回原始已转义的代码
+   * 注意：输入 code 是 HTML 转义后的文本，需要先反转义再交给 hljs
+   * hljs 的输出自带 HTML 转义，无需再次处理
+   */
+  function tryHighlight(code: string, language: string): string {
+    if (!hljs || !language) return code;
+    try {
+      const langLower = language.toLowerCase();
+      if (hljs.getLanguage(langLower)) {
+        const rawCode = unescapeHtml(code);
+        return hljs.highlight(rawCode, { language: langLower }).value;
+      }
+    } catch {
+      /* 高亮失败，降级为纯文本 */
+    }
+    return code;
+  }
+
+  /**
+   * 删除代码块中的所有空白行
+   */
+  function removeBlankLines(lines: string[]): string[] {
+    return lines.filter((line) => line.trim() !== "");
+  }
+
+  /**
+   * 构建代码块的 HTML
+   */
+  function buildCodeBlockHtml(
+    codeLines: string[],
+    codeLanguage: string,
+  ): string {
+    const langAttr = codeLanguage
+      ? ` data-language="${escapeHtml(codeLanguage)}"`
+      : "";
+    let html = `<div class="code-block"${langAttr}>`;
+    if (codeLanguage) {
+      html += `<div class="code-lang">${escapeHtml(codeLanguage)}</div>`;
+    }
+    // 删除空白行后拼接，再尝试语法高亮
+    const compacted = removeBlankLines(codeLines);
+    const rawCode = compacted.join("\n");
+    const highlightedCode = codeLanguage
+      ? tryHighlight(rawCode, codeLanguage)
+      : rawCode;
+    html += `<pre><code>${highlightedCode}</code></pre></div>`;
+    return html;
+  }
+
+  /**
+   * 将原始 HTML 字符串转换为段落，支持 Markdown 代码块（```...```）和行内代码（`...`）
+   */
+  function formatWithCodeBlocks(rawHtml: string): string {
+    const lines = rawHtml.split("\n");
+    let output = "";
+    let inCodeBlock = false;
+    let codeLines: string[] = [];
+    let codeLanguage = "";
+
+    for (const line of lines) {
+      // 提取纯文本（去掉 HTML 标签）来检测 ```
+      const plainLine = line.replace(/<[^>]+>/g, "").trim();
+
+      if (!inCodeBlock && plainLine.startsWith("```")) {
+        // 代码块开始
+        inCodeBlock = true;
+        codeLanguage = plainLine.slice(3).trim();
+        codeLines = [];
+      } else if (inCodeBlock && plainLine === "```") {
+        // 代码块结束
+        inCodeBlock = false;
+        output += buildCodeBlockHtml(codeLines, codeLanguage);
+        codeLanguage = "";
+        codeLines = [];
+      } else if (inCodeBlock) {
+        codeLines.push(line);
+      } else {
+        if (line.trim()) {
+          // 处理行内代码：`...` → <code class="inline-code">...</code>
+          const processedLine = line.replace(
+            /`([^`]+)`/g,
+            '<code class="inline-code">$1</code>',
+          );
+          output += `<p>${processedLine}</p>`;
+        }
+      }
+    }
+
+    // 处理未闭合的代码块
+    if (inCodeBlock && codeLines.length > 0) {
+      output += buildCodeBlockHtml(codeLines, codeLanguage);
+    }
+
+    return output;
+  }
+
   // 渲染单个章节的 HTML
   function renderChapter(chapter: Chapter): string {
     const { textContent, segments } = chapter;
@@ -47,9 +222,12 @@
     }
 
     if (!segments || segments.length === 0) {
-      // 没有对齐数据，简单渲染文本
-      const lines = textContent.split("\n").filter((l) => l.trim());
-      return lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("\n");
+      // 没有对齐数据，简单渲染文本（支持代码块）
+      const escaped = textContent
+        .split("\n")
+        .map((line) => escapeHtml(line))
+        .join("\n");
+      return formatWithCodeBlocks(escaped);
     }
 
     // 有对齐数据，精确匹配渲染
@@ -79,12 +257,8 @@
       result += escapeHtml(textContent.substring(textPos));
     }
 
-    // 转换为段落
-    return result
-      .split("\n")
-      .filter((p) => p.trim())
-      .map((p) => `<p>${p}</p>`)
-      .join("\n");
+    // 转换为段落（支持代码块）
+    return formatWithCodeBlocks(result);
   }
 
   // 处理章节可见性变化
@@ -220,6 +394,39 @@
     updateHighlight();
   });
 
+  // hljs 加载完成后，对页面上已有的代码块进行语法高亮
+  $effect(() => {
+    if (hljs && containerRef) {
+      containerRef
+        .querySelectorAll(".code-block pre code:not(.hljs)")
+        .forEach((block) => {
+          const lang = (
+            block.closest(".code-block") as HTMLElement
+          )?.dataset.language;
+          if (lang) {
+            try {
+              const langLower = lang.toLowerCase();
+              if (hljs.getLanguage(langLower)) {
+                const raw = block.textContent || "";
+                const highlighted = hljs.highlight(raw, {
+                  language: langLower,
+                }).value;
+                block.innerHTML = highlighted;
+                block.classList.add("hljs");
+              }
+            } catch {
+              /* 高亮失败，保持原样 */
+            }
+          }
+        });
+    }
+  });
+
+  onMount(() => {
+    // 异步加载 highlight.js（不阻塞首屏渲染）
+    initHighlightJs();
+  });
+
   onDestroy(() => {
     observer?.disconnect();
   });
@@ -280,6 +487,119 @@
   .chapter-content :global(p) {
     margin-bottom: 1.25em;
     text-indent: 2em;
+  }
+
+  /* 代码块样式 */
+  .chapter-content :global(.code-block) {
+    background-color: var(--reader-code-bg, #f6f8fa);
+    border: 1px solid var(--reader-code-border, #e1e4e8);
+    border-radius: 6px;
+    margin: 1em 0;
+    overflow-x: auto;
+    line-height: var(--reader-code-line-height, 1.25); /* 在容器级重置行高，覆盖 .reader-container 的 1.8 */
+  }
+
+  .chapter-content :global(.code-block .code-lang) {
+    padding: 2px 12px;
+    font-size: var(--reader-code-font-size, 0.75em);
+    color: var(--reader-muted, #6a737d);
+    border-bottom: 1px solid var(--reader-code-border, #e1e4e8);
+    font-family:
+      "JetBrains Mono",
+      "Fira Code",
+      "SF Mono",
+      "Cascadia Code",
+      "Source Code Pro",
+      Menlo,
+      Consolas,
+      "Liberation Mono",
+      monospace;
+  }
+
+  .chapter-content :global(.code-block pre) {
+    margin: 0;
+    padding: var(--reader-code-padding, 10px 14px);
+  }
+
+  .chapter-content :global(.code-block code) {
+    font-family:
+      "JetBrains Mono",
+      "Fira Code",
+      "SF Mono",
+      "Cascadia Code",
+      "Source Code Pro",
+      Menlo,
+      Consolas,
+      "Liberation Mono",
+      monospace;
+    font-size: var(--reader-code-font-size, 0.75em);
+    line-height: var(--reader-code-line-height, 1.25);
+    white-space: pre;
+    color: inherit;
+  }
+
+  /* 行内代码样式 */
+  .chapter-content :global(.inline-code) {
+    font-family:
+      "JetBrains Mono",
+      "Fira Code",
+      "SF Mono",
+      "Cascadia Code",
+      "Source Code Pro",
+      Menlo,
+      Consolas,
+      "Liberation Mono",
+      monospace;
+    background-color: var(--reader-code-bg, #f6f8fa);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font-size: var(--reader-code-font-size, 0.75em);
+  }
+
+  /* ===== 语法高亮颜色 (GitHub 风格) ===== */
+  .chapter-content :global(.code-block .hljs-keyword),
+  .chapter-content :global(.code-block .hljs-selector-tag),
+  .chapter-content :global(.code-block .hljs-deletion) {
+    color: var(--hljs-keyword, #d73a49);
+  }
+  .chapter-content :global(.code-block .hljs-string),
+  .chapter-content :global(.code-block .hljs-addition) {
+    color: var(--hljs-string, #032f62);
+  }
+  .chapter-content :global(.code-block .hljs-comment),
+  .chapter-content :global(.code-block .hljs-quote) {
+    color: var(--hljs-comment, #6a737d);
+    font-style: italic;
+  }
+  .chapter-content :global(.code-block .hljs-title),
+  .chapter-content :global(.code-block .hljs-title.function_),
+  .chapter-content :global(.code-block .hljs-section) {
+    color: var(--hljs-function, #6f42c1);
+  }
+  .chapter-content :global(.code-block .hljs-number),
+  .chapter-content :global(.code-block .hljs-literal) {
+    color: var(--hljs-number, #005cc5);
+  }
+  .chapter-content :global(.code-block .hljs-built_in),
+  .chapter-content :global(.code-block .hljs-type) {
+    color: var(--hljs-builtin, #e36209);
+  }
+  .chapter-content :global(.code-block .hljs-attr),
+  .chapter-content :global(.code-block .hljs-attribute) {
+    color: var(--hljs-attr, #005cc5);
+  }
+  .chapter-content :global(.code-block .hljs-variable),
+  .chapter-content :global(.code-block .hljs-template-variable) {
+    color: var(--hljs-variable, #e36209);
+  }
+  .chapter-content :global(.code-block .hljs-params) {
+    color: inherit;
+  }
+  .chapter-content :global(.code-block .hljs-meta) {
+    color: var(--hljs-meta, #005cc5);
+  }
+  .chapter-content :global(.code-block .hljs-regexp) {
+    color: var(--hljs-string, #032f62);
   }
 
   .chapter-placeholder {

@@ -70,10 +70,11 @@ class MarkdownCleaner:
     @staticmethod
     def md_to_txt(md_content: str) -> str:
         """
-        将 Markdown 内容转换为纯文本
+        将 Markdown 内容转换为纯文本（保留代码块用于显示）
         
         功能：
-        - 移除代码块、链接、图片、HTML标签
+        - 保留代码块（```...```）和行内代码（`...`）用于前端显示
+        - 移除链接、图片、HTML标签
         - 移除 Markdown 格式标记（标题#、粗体**、斜体*）
         - 移除列表标记、引用、表格
         - 清理多余空行
@@ -81,9 +82,21 @@ class MarkdownCleaner:
         """
         text = md_content
         
-        # 移除代码块
-        text = re.sub(r'```[\s\S]*?```', '', text)
-        text = re.sub(r'`[^`]+`', '', text)
+        # 先提取代码块和行内代码，替换为占位符（防止后续清洗破坏代码内容）
+        # 使用 \x00 (null字符) 作为分隔符，避免被 Markdown 粗体/斜体规则误匹配
+        code_blocks = []
+        def _save_code_block(match):
+            code_blocks.append(match.group(0))
+            return f'\n\x00CODEBLOCK{len(code_blocks) - 1}\x00\n'
+        
+        inline_codes = []
+        def _save_inline_code(match):
+            inline_codes.append(match.group(0))
+            return f'\x00INLINECODE{len(inline_codes) - 1}\x00'
+        
+        # 先提取多行代码块，再提取行内代码（顺序重要）
+        text = re.sub(r'```[\s\S]*?```', _save_code_block, text)
+        text = re.sub(r'`[^`]+`', _save_inline_code, text)
         
         # 移除链接但保留文本 [text](url) -> text
         text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
@@ -120,12 +133,35 @@ class MarkdownCleaner:
         # 移除表格 (|xxx|xxx|)
         text = re.sub(r'\|[^\n]+\|', '', text)
         
+        # 恢复代码块和行内代码
+        for i, block in enumerate(code_blocks):
+            text = text.replace(f'\x00CODEBLOCK{i}\x00', block)
+        for i, code in enumerate(inline_codes):
+            text = text.replace(f'\x00INLINECODE{i}\x00', code)
+        
         # 清理多余空行 (3个或更多连续换行 -> 2个换行)
         text = re.sub(r'\n{3,}', '\n\n', text)
         
         # 删除所有完全空白的行
         text = re.sub(r'^\s*$\n', '', text, flags=re.MULTILINE)
         
+        return text.strip()
+
+    @staticmethod
+    def strip_code_blocks(text: str) -> str:
+        """
+        移除文本中的代码块和行内代码（用于 TTS 预处理）
+        
+        - 移除 ```...``` 包裹的多行代码块（含语言标识，如 ```python ... ```）
+        - 移除 `...` 包裹的行内代码
+        - 清理可能产生的多余空行
+        """
+        # 移除多行代码块（包括可能的语言标识）
+        text = re.sub(r'```[\s\S]*?```', '', text)
+        # 移除行内代码
+        text = re.sub(r'`[^`]+`', '', text)
+        # 清理多余空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()
 
     @staticmethod
@@ -417,12 +453,45 @@ async def process_text_to_audiobook(
         mp3_path = os.path.join(output_dir, f"{file_prefix}_audio.mp3")
         align_path = os.path.join(output_dir, f"{file_prefix}_align.json")
         
-        # 保存文本
+        # 保存显示文本（保留代码块，供前端展示）
         with open(txt_path, 'w', encoding='utf-8') as f:
             f.write(chapter_text)
         
+        # 移除代码块后的文本用于 TTS 生成
+        tts_text = MarkdownCleaner.strip_code_blocks(chapter_text)
+        
         analysis = TokenAnalyzer.analyze_text(chapter_text)
-        logger.info(f"处理章节 {idx}/{len(chapters)}: {analysis['total_words']} 字")
+        logger.info(f"处理章节 {idx}/{len(chapters)}: {analysis['total_words']} 字 (TTS文本: {len(tts_text)} 字符)")
+        
+        # 如果移除代码块后文本为空，跳过 TTS 处理
+        if not tts_text.strip():
+            logger.info(f"章节 {idx} 移除代码块后无文本内容，跳过 TTS 处理")
+            with open(align_path, 'w', encoding='utf-8') as f:
+                json.dump([], f)
+            # 生成一个极短的静音音频文件
+            silence_duration = 0.5
+            try:
+                subprocess.run([
+                    TTSConfig.FFMPEG_COMMAND,
+                    '-f', 'lavfi', '-i', f'anullsrc=r=44100:cl=mono',
+                    '-t', str(silence_duration),
+                    '-codec:a', 'libmp3lame', '-b:a', TTSConfig.FFMPEG_BITRATE,
+                    '-y', mp3_path
+                ], capture_output=True, text=True, timeout=30)
+            except Exception as e:
+                logger.warning(f"生成静音音频失败: {e}")
+                silence_duration = 0.0
+            
+            chapters_info.append({
+                "id": idx,
+                "title": f"Chapter {idx}",
+                "audio_file": f"{file_prefix}_audio.mp3",
+                "align_file": f"{file_prefix}_align.json",
+                "text_file": f"{file_prefix}_text.txt",
+                "duration": round(silence_duration, 2),
+                "words": analysis['total_words']
+            })
+            continue
         
         # 创建临时目录
         temp_dir = os.path.join(output_dir, f".temp_{file_prefix}")
@@ -430,7 +499,7 @@ async def process_text_to_audiobook(
         
         try:
             success, duration = await process_chapter_with_segments(
-                chapter_text, voice, mp3_path, align_path, temp_dir
+                tts_text, voice, mp3_path, align_path, temp_dir
             )
             
             if success:
