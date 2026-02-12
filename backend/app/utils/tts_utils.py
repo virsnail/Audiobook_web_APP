@@ -460,8 +460,9 @@ async def process_text_to_audiobook(
         # 移除代码块后的文本用于 TTS 生成
         tts_text = MarkdownCleaner.strip_code_blocks(chapter_text)
         
-        analysis = TokenAnalyzer.analyze_text(chapter_text)
-        logger.info(f"处理章节 {idx}/{len(chapters)}: {analysis['total_words']} 字 (TTS文本: {len(tts_text)} 字符)")
+        # 使用 tts_text 分析字数，确保与实际合成内容一致
+        analysis = TokenAnalyzer.analyze_text(tts_text)
+        logger.info(f"处理章节 {idx}/{len(chapters)}: {analysis['total_words']} 字 (显示文本: {len(chapter_text)} 字符, TTS文本: {len(tts_text)} 字符)")
         
         # 如果移除代码块后文本为空，跳过 TTS 处理
         if not tts_text.strip():
