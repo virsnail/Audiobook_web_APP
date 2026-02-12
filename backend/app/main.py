@@ -2,9 +2,13 @@ import secrets
 import string
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.database import engine, Base, AsyncSessionLocal
@@ -12,6 +16,9 @@ from app.models.user import User, InvitationCode
 from app.models.activity import UserActivityLog
 from app.routers import auth_router, books_router, activity_router as activity_router_module
 from app.utils.security import get_password_hash
+
+# 速率限制器（基于客户端 IP）
+limiter = Limiter(key_func=get_remote_address)
 
 
 async def create_admin_user():
@@ -75,6 +82,10 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
 )
+
+# 速率限制
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS
 app.add_middleware(

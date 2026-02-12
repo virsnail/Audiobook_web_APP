@@ -188,13 +188,28 @@ class MarkdownCleaner:
 
 
 def split_text_by_minutes(text: str, max_minutes: float = TTSConfig.MAX_MINUTES_PER_SEGMENT) -> List[str]:
-    """按预估时长拆分文本"""
+    """
+    按预估时长拆分文本（保护代码块不被拆分）
+    
+    代码块（```...```）作为不可分割的整体，绝不会被拆到两个章节中。
+    时长估算仅基于非代码文本，因为代码块在 TTS 前会被移除。
+    """
     analysis = TokenAnalyzer.analyze_text(text)
     
     if analysis['estimated_minutes'] <= max_minutes:
         return [text]
     
-    paragraphs = text.split('\n')
+    # 第一步：提取代码块为单行占位符，防止拆分时破坏代码块
+    code_blocks = []
+    def _save_block(match):
+        code_blocks.append(match.group(0))
+        # 占位符用 \x00 包裹，不会被任何文本处理规则匹配
+        return f'\x00SPLITCB{len(code_blocks) - 1}\x00'
+    
+    protected_text = re.sub(r'```[\s\S]*?```', _save_block, text)
+    
+    # 第二步：按段落拆分（代码块已变成单行占位符，不会被拆断）
+    paragraphs = protected_text.split('\n')
     paragraphs = [p for p in paragraphs if p.strip()]
     
     segments = []
@@ -226,7 +241,14 @@ def split_text_by_minutes(text: str, max_minutes: float = TTSConfig.MAX_MINUTES_
     if current_segment:
         segments.append('\n\n'.join(current_segment))
     
-    return segments
+    # 第三步：恢复代码块
+    result = []
+    for segment in segments:
+        for i, block in enumerate(code_blocks):
+            segment = segment.replace(f'\x00SPLITCB{i}\x00', block)
+        result.append(segment)
+    
+    return result
 
 
 async def run_edge_tts_with_alignment(

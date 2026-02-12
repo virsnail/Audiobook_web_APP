@@ -2,7 +2,7 @@
   首页 - 书架
 -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { goto } from "$app/navigation";
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import {
@@ -55,6 +55,14 @@
   // 初始化
   onMount(async () => {
     await init();
+  });
+
+  // 组件销毁时清理定时器，防止内存泄漏
+  onDestroy(() => {
+    if (_countdownTimer) {
+      clearInterval(_countdownTimer);
+      _countdownTimer = null;
+    }
   });
 
   async function init() {
@@ -196,13 +204,16 @@
     }
   }
 
-  // 倒计时逻辑
+  // 倒计时逻辑（组件销毁时自动清理）
+  let _countdownTimer: ReturnType<typeof setInterval> | null = null;
   function startCountdown() {
     countdown = 60;
-    const timer = setInterval(() => {
+    if (_countdownTimer) clearInterval(_countdownTimer);
+    _countdownTimer = setInterval(() => {
       countdown--;
       if (countdown <= 0) {
-        clearInterval(timer);
+        clearInterval(_countdownTimer!);
+        _countdownTimer = null;
       }
     }, 1000);
   }
