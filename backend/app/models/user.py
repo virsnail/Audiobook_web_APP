@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer
+from datetime import datetime, date
+from sqlalchemy import Column, String, Boolean, DateTime, Date, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -19,6 +19,14 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 登录安全：每日错误次数限制
+    failed_login_count = Column(Integer, default=0, nullable=False, server_default="0")
+    failed_login_date = Column(Date, nullable=True)
+    
+    # 找回密码：每日尝试次数限制
+    forgot_password_count = Column(Integer, default=0, nullable=False, server_default="0")
+    forgot_password_date = Column(Date, nullable=True)
     
     # 关系
     books = relationship("Book", back_populates="owner", cascade="all, delete-orphan")
