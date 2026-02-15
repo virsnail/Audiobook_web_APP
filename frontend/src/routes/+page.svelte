@@ -457,35 +457,14 @@
 
               <!-- 操作按钮 -->
               <div class="mt-3 flex items-center justify-between">
-                <button
-                  onclick={(e) => handleBookClick(book, e)}
-                  class="flex items-center text-blue-600 text-sm font-medium hover:text-blue-700 transition-colors"
-                >
-                  <span>开始阅读 Read</span>
-                  <svg
-                    class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
-                </button>
-
                 <div class="flex items-center gap-2">
-                  <!-- 分享按钮 -->
                   <button
-                    onclick={() => openShareDialog(book.id)}
-                    class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="分享 Share"
+                    onclick={(e) => handleBookClick(book, e)}
+                    class="flex items-center text-blue-600 text-sm font-medium hover:text-blue-700 transition-colors"
                   >
+                    <span>开始阅读 Read</span>
                     <svg
-                      class="w-5 h-5"
+                      class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -494,32 +473,64 @@
                         stroke-linecap="round"
                         stroke-linejoin="round"
                         stroke-width="2"
-                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                        d="M9 5l7 7-7 7"
                       />
                     </svg>
                   </button>
-
-                  <!-- 删除按钮 -->
-                  <button
-                    onclick={() => handleDelete(book.id)}
-                    class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    title="删除 Delete"
-                  >
-                    <svg
-                      class="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
+                  <!-- 非自己的书显示来源标签 -->
+                  {#if book.owner_id !== authStore.user?.id}
+                    <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      {book.is_public ? '公开 Public' : '分享 Shared'}
+                    </span>
+                  {/if}
                 </div>
+
+                <!-- 分享和删除按钮：仅对自己的书显示 -->
+                {#if book.owner_id === authStore.user?.id}
+                  <div class="flex items-center gap-2">
+                    <!-- 分享按钮 -->
+                    <button
+                      onclick={() => openShareDialog(book.id)}
+                      class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="分享 Share"
+                    >
+                      <svg
+                        class="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                        />
+                      </svg>
+                    </button>
+
+                    <!-- 删除按钮 -->
+                    <button
+                      onclick={() => handleDelete(book.id)}
+                      class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="删除 Delete"
+                    >
+                      <svg
+                        class="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                {/if}
               </div>
             </div>
           </div>

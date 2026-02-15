@@ -94,7 +94,7 @@ async def delete_user(session: AsyncSession, email: str):
                 r = await session.execute(delete(BookShare).where(BookShare.book_id.in_(book_ids)))
                 print(f"   - Deleted {r.rowcount} book shares (as owner)")
             
-            r = await session.execute(delete(BookShare).where(BookShare.shared_to_id == user_id))
+            r = await session.execute(delete(BookShare).where(BookShare.shared_to == user_id))
             print(f"   - Deleted {r.rowcount} book shares (as recipient)")
     except Exception as e:
         print(f"   - Skip book shares: {e}")
@@ -125,11 +125,17 @@ async def delete_user(session: AsyncSession, email: str):
             user = result.scalar_one_or_none()
             if user:
                 await session.delete(user)
+        print(f"   - User record marked for deletion")
+    except Exception as e:
+        print(f"   - Error deleting user record: {e}")
+
+    # 6. 提交所有更改（步骤 1-5 中 SAVEPOINT 成功的部分）
+    try:
         await session.commit()
-        print(f"✅ User {email} and all associated data deleted.")
+        print(f"✅ User {email} and associated data deleted.")
     except Exception as e:
         await session.rollback()
-        print(f"❌ Error deleting user: {e}")
+        print(f"❌ Failed to commit changes: {e}")
 
 
 async def wipe_all(session: AsyncSession):

@@ -1616,11 +1616,11 @@ async def get_book_cover(
         if book.owner_id == current_user.id:
             has_access = True
         else:
-            # 检查是否被分享
+            # 检查是否被分享（字段名是 shared_to，不是 shared_to_id）
             share_result = await db.execute(
                 select(BookShare).where(
                     BookShare.book_id == book_id,
-                    BookShare.shared_to_id == current_user.id
+                    BookShare.shared_to == current_user.id
                 )
             )
             if share_result.scalar_one_or_none():

@@ -24,6 +24,8 @@ class BookResponse(BookBase):
     created_at: datetime
     book_type: Optional[str] = "txt"
     epub_structure: Optional[Json] = None
+    processing_status: Optional[str] = "ready"
+    processing_error: Optional[str] = None
     
     class Config:
         from_attributes = True

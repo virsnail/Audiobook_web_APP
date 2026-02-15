@@ -135,6 +135,7 @@ export async function logActivity(action: string, details?: Record<string, any>)
 
 export interface Book {
   id: string;
+  owner_id: string;
   title: string;
   author?: string;
   description?: string;
