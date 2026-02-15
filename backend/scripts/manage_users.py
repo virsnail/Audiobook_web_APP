@@ -2,8 +2,9 @@
 import asyncio
 import sys
 import os
+import shutil
 import argparse
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # 添加项目根目录到 pythonpath
@@ -15,6 +16,31 @@ from app.models.book import Book, BookShare, ReadingProgress
 from app.models.activity import UserActivityLog
 from app.config import settings
 
+
+async def _table_exists(session: AsyncSession, table_name: str) -> bool:
+    """检查数据库中是否存在指定的表"""
+    result = await session.execute(
+        text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = :t)"),
+        {"t": table_name}
+    )
+    return result.scalar()
+
+
+async def _safe_delete(session: AsyncSession, stmt, label: str):
+    """
+    安全执行 DELETE 语句：使用 SAVEPOINT 隔离，
+    失败时只回滚到 SAVEPOINT 而不影响外层事务。
+    """
+    try:
+        async with session.begin_nested():
+            r = await session.execute(stmt)
+            print(f"   - Deleted {r.rowcount} {label}")
+            return r.rowcount
+    except Exception as e:
+        print(f"   - Skip {label}: {e}")
+        return 0
+
+
 async def list_users(session: AsyncSession):
     """列出所有用户"""
     result = await session.execute(select(User).order_by(User.created_at.desc()))
@@ -25,6 +51,7 @@ async def list_users(session: AsyncSession):
     for user in users:
         print(f"{str(user.id):<36} | {user.email:<30} | {user.nickname or '':<20} | {'Yes' if user.is_admin else 'No':<6} | {user.created_at}")
     print(f"\nTotal Users: {len(users)}\n")
+
 
 async def delete_user(session: AsyncSession, email: str):
     """删除特定用户及其所有数据"""
@@ -39,55 +66,71 @@ async def delete_user(session: AsyncSession, email: str):
     user_id = user.id
     print(f"⚠️  Deleting user: {email} ({user_id})")
     
-    # 1. 删除活动日志
-    try:
-        r = await session.execute(delete(UserActivityLog).where(UserActivityLog.user_id == user_id))
-        print(f"   - Deleted {r.rowcount} activity logs")
-    except Exception as e:
-        print(f"   - Skip activity logs: {e}")
+    # 1. 删除活动日志（表可能不存在）
+    if await _table_exists(session, "user_activity_logs"):
+        await _safe_delete(
+            session,
+            delete(UserActivityLog).where(UserActivityLog.user_id == user_id),
+            "activity logs"
+        )
+    else:
+        print("   - Skip activity logs: table does not exist")
 
     # 2. 删除阅读进度
-    try:
-        r = await session.execute(delete(ReadingProgress).where(ReadingProgress.user_id == user_id))
-        print(f"   - Deleted {r.rowcount} reading progress records")
-    except Exception as e:
-        print(f"   - Skip reading progress: {e}")
+    await _safe_delete(
+        session,
+        delete(ReadingProgress).where(ReadingProgress.user_id == user_id),
+        "reading progress records"
+    )
 
     # 3. 删除书籍分享（作为分享者或被分享者）
     try:
-        # 先获取该用户的书籍 ID
-        book_result = await session.execute(select(Book.id).where(Book.owner_id == user_id))
-        book_ids = [row[0] for row in book_result.all()]
-        
-        if book_ids:
-            r = await session.execute(delete(BookShare).where(BookShare.book_id.in_(book_ids)))
-            print(f"   - Deleted {r.rowcount} book shares (as owner)")
-        
-        r = await session.execute(delete(BookShare).where(BookShare.shared_to_id == user_id))
-        print(f"   - Deleted {r.rowcount} book shares (as recipient)")
+        async with session.begin_nested():
+            # 先获取该用户的书籍 ID
+            book_result = await session.execute(select(Book.id).where(Book.owner_id == user_id))
+            book_ids = [row[0] for row in book_result.all()]
+            
+            if book_ids:
+                r = await session.execute(delete(BookShare).where(BookShare.book_id.in_(book_ids)))
+                print(f"   - Deleted {r.rowcount} book shares (as owner)")
+            
+            r = await session.execute(delete(BookShare).where(BookShare.shared_to_id == user_id))
+            print(f"   - Deleted {r.rowcount} book shares (as recipient)")
     except Exception as e:
         print(f"   - Skip book shares: {e}")
 
-    # 4. 删除书籍（含物理文件警告）
-    result = await session.execute(select(Book).where(Book.owner_id == user_id))
-    books = result.scalars().all()
-    
-    for book in books:
-        full_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
-        if os.path.exists(full_path):
-            import shutil
-            shutil.rmtree(full_path, ignore_errors=True)
-            print(f"   - Deleted book files: {book.title} ({full_path})")
-        else:
-            print(f"   - Book files not found: {book.title} ({full_path})")
-    
-    await session.execute(delete(Book).where(Book.owner_id == user_id))
-    print(f"   - Deleted {len(books)} books from database")
-    
-    # 5. 删除用户
-    await session.delete(user)
-    await session.commit()
-    print(f"✅ User {email} and all associated data deleted.")
+    # 4. 删除书籍（含物理文件）
+    try:
+        async with session.begin_nested():
+            result = await session.execute(select(Book).where(Book.owner_id == user_id))
+            books = result.scalars().all()
+            
+            for book in books:
+                full_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
+                if os.path.exists(full_path):
+                    shutil.rmtree(full_path, ignore_errors=True)
+                    print(f"   - Deleted book files: {book.title} ({full_path})")
+                else:
+                    print(f"   - Book files not found: {book.title} ({full_path})")
+            
+            await session.execute(delete(Book).where(Book.owner_id == user_id))
+            print(f"   - Deleted {len(books)} books from database")
+    except Exception as e:
+        print(f"   - Error deleting books: {e}")
+
+    # 5. 删除用户（重新查询以确保对象仍在 session 中）
+    try:
+        async with session.begin_nested():
+            result = await session.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if user:
+                await session.delete(user)
+        await session.commit()
+        print(f"✅ User {email} and all associated data deleted.")
+    except Exception as e:
+        await session.rollback()
+        print(f"❌ Error deleting user: {e}")
+
 
 async def wipe_all(session: AsyncSession):
     """清空所有用户和书籍数据"""
@@ -97,27 +140,18 @@ async def wipe_all(session: AsyncSession):
         print("Operation cancelled.")
         return
 
-    # 按依赖顺序删除
-    r = await session.execute(delete(UserActivityLog))
-    print(f"   - Deleted {r.rowcount} activity logs")
-    
-    r = await session.execute(delete(ReadingProgress))
-    print(f"   - Deleted {r.rowcount} reading progress records")
-    
-    r = await session.execute(delete(BookShare))
-    print(f"   - Deleted {r.rowcount} book shares")
-    
-    r = await session.execute(delete(Book))
-    print(f"   - Deleted {r.rowcount} books")
-    
-    r = await session.execute(delete(EmailVerification))
-    print(f"   - Deleted {r.rowcount} email verifications")
-    
-    r = await session.execute(delete(InvitationCode))
-    print(f"   - Deleted {r.rowcount} invitation codes")
-    
-    r = await session.execute(delete(User))
-    print(f"   - Deleted {r.rowcount} users")
+    # 按依赖顺序删除（每步用 SAVEPOINT 隔离，表不存在也不会中断）
+    if await _table_exists(session, "user_activity_logs"):
+        await _safe_delete(session, delete(UserActivityLog), "activity logs")
+    else:
+        print("   - Skip activity logs: table does not exist")
+
+    await _safe_delete(session, delete(ReadingProgress), "reading progress records")
+    await _safe_delete(session, delete(BookShare), "book shares")
+    await _safe_delete(session, delete(Book), "books")
+    await _safe_delete(session, delete(EmailVerification), "email verifications")
+    await _safe_delete(session, delete(InvitationCode), "invitation codes")
+    await _safe_delete(session, delete(User), "users")
     
     await session.commit()
     print("✅ All users and data wiped successfully.")
