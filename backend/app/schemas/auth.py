@@ -27,3 +27,9 @@ class RegisterRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=128, description="新密码长度 6-128 位")
     email_code: str = Field(..., min_length=6, max_length=6, pattern=r'^\d{6}$', description="6 位数字验证码")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    email_code: str = Field(..., min_length=6, max_length=6, pattern=r'^\d{6}$', description="6 位数字验证码")
+    new_password: str = Field(..., min_length=6, max_length=128, description="新密码长度 6-128 位")

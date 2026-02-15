@@ -95,6 +95,14 @@ export async function createInvitationCodes(count: number = 1): Promise<{ codes:
   });
 }
 
+// 忘记密码（找回密码，无需登录）
+export async function forgotPassword(email: string, emailCode: string, newPassword: string): Promise<{ message: string }> {
+  return request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, email_code: emailCode, new_password: newPassword }),
+  });
+}
+
 // 修改密码
 export async function changePassword(newPassword: string, emailCode: string): Promise<{ message: string }> {
   return request('/auth/change-password', {

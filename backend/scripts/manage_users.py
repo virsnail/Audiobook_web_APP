@@ -3,14 +3,15 @@ import asyncio
 import sys
 import os
 import argparse
-from sqlalchemy import select, delete, text
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # 添加项目根目录到 pythonpath
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import AsyncSessionLocal, engine
-from app.models.user import User, Book, InvitationCode, EmailVerification
+from app.models.user import User, InvitationCode, EmailVerification
+from app.models.book import Book, BookShare, ReadingProgress
 from app.models.activity import UserActivityLog
 from app.config import settings
 
@@ -19,11 +20,11 @@ async def list_users(session: AsyncSession):
     result = await session.execute(select(User).order_by(User.created_at.desc()))
     users = result.scalars().all()
     
-    print(f"\n{'ID':<36} | {'Email':<30} | {'Nickname':<20} | {'Created At'}")
-    print("-" * 110)
+    print(f"\n{'ID':<36} | {'Email':<30} | {'Nickname':<20} | {'Admin':<6} | {'Created At'}")
+    print("-" * 120)
     for user in users:
-        print(f"{str(user.id):<36} | {user.email:<30} | {user.nickname or '':<20} | {user.created_at}")
-    print(f"\nTotal Components: {len(users)}\n")
+        print(f"{str(user.id):<36} | {user.email:<30} | {user.nickname or '':<20} | {'Yes' if user.is_admin else 'No':<6} | {user.created_at}")
+    print(f"\nTotal Users: {len(users)}\n")
 
 async def delete_user(session: AsyncSession, email: str):
     """删除特定用户及其所有数据"""
@@ -38,31 +39,50 @@ async def delete_user(session: AsyncSession, email: str):
     user_id = user.id
     print(f"⚠️  Deleting user: {email} ({user_id})")
     
-    # 1. 删除关联的活动日志
-    # (如果 ActivityLog 模型存在)
+    # 1. 删除活动日志
     try:
-        if 'UserActivityLog' in globals():
-             await session.execute(delete(UserActivityLog).where(UserActivityLog.user_id == user_id))
-    except Exception:
-         pass # 忽略如果表不存在
+        r = await session.execute(delete(UserActivityLog).where(UserActivityLog.user_id == user_id))
+        print(f"   - Deleted {r.rowcount} activity logs")
+    except Exception as e:
+        print(f"   - Skip activity logs: {e}")
 
-    # 2. 删除书籍文件 (物理删除)
-    # 首先查询用户的所有书籍
+    # 2. 删除阅读进度
+    try:
+        r = await session.execute(delete(ReadingProgress).where(ReadingProgress.user_id == user_id))
+        print(f"   - Deleted {r.rowcount} reading progress records")
+    except Exception as e:
+        print(f"   - Skip reading progress: {e}")
+
+    # 3. 删除书籍分享（作为分享者或被分享者）
+    try:
+        # 先获取该用户的书籍 ID
+        book_result = await session.execute(select(Book.id).where(Book.owner_id == user_id))
+        book_ids = [row[0] for row in book_result.all()]
+        
+        if book_ids:
+            r = await session.execute(delete(BookShare).where(BookShare.book_id.in_(book_ids)))
+            print(f"   - Deleted {r.rowcount} book shares (as owner)")
+        
+        r = await session.execute(delete(BookShare).where(BookShare.shared_to_id == user_id))
+        print(f"   - Deleted {r.rowcount} book shares (as recipient)")
+    except Exception as e:
+        print(f"   - Skip book shares: {e}")
+
+    # 4. 删除书籍（含物理文件警告）
     result = await session.execute(select(Book).where(Book.owner_id == user_id))
     books = result.scalars().all()
     
-    deleted_files = 0
     for book in books:
-        # TODO: 这里只处理了数据库记录，实际上应该删除物理文件
-        # 在 Docker 环境中，这可能需要挂载卷的权限
-        # 暂时只打印路径
-        print(f"   - Would delete book files for: {book.title} ({book.id})")
-        
-    # 3. 删除书籍记录 (DB)
-    await session.execute(delete(Book).where(Book.owner_id == user_id))
+        full_path = os.path.join(settings.MEDIA_PATH, "books", book.storage_path)
+        if os.path.exists(full_path):
+            import shutil
+            shutil.rmtree(full_path, ignore_errors=True)
+            print(f"   - Deleted book files: {book.title} ({full_path})")
+        else:
+            print(f"   - Book files not found: {book.title} ({full_path})")
     
-    # 4. 删除邀请码使用记录 (将 used_by 置空 或 删除)
-    # 这里我们选择保留邀请码但清除使用状态? 不, 保持原样, 只是用户被删了
+    await session.execute(delete(Book).where(Book.owner_id == user_id))
+    print(f"   - Deleted {len(books)} books from database")
     
     # 5. 删除用户
     await session.delete(user)
@@ -70,25 +90,34 @@ async def delete_user(session: AsyncSession, email: str):
     print(f"✅ User {email} and all associated data deleted.")
 
 async def wipe_all(session: AsyncSession):
-    """清空所有用户和书籍数据 (保留管理员?)"""
+    """清空所有用户和书籍数据"""
     print("⚠️  WARNING: THIS WILL DELETE ALL USERS AND BOOKS!")
     confirm = input("Type 'DELETE_ALL' to confirm: ")
     if confirm != "DELETE_ALL":
         print("Operation cancelled.")
         return
 
-    # 删除所有非管理员用户? 或者全部删除?
-    # 用户需求是 "方便所有用户重新开始注册", 所以应该是全部删除
+    # 按依赖顺序删除
+    r = await session.execute(delete(UserActivityLog))
+    print(f"   - Deleted {r.rowcount} activity logs")
     
-    # Truncate tables (cascade)
-    # SQLite 不支持 CASCADE TRUNCATE, PostgreSQL 支持
-    # 但为了安全，我们用 delete
+    r = await session.execute(delete(ReadingProgress))
+    print(f"   - Deleted {r.rowcount} reading progress records")
     
-    await session.execute(delete(UserActivityLog))
-    await session.execute(delete(Book))
-    await session.execute(delete(EmailVerification))
-    await session.execute(delete(InvitationCode)) # 邀请码也清空吗? 用户说 "方便所有用户重新开始", 邀请码可能也需要重置
-    await session.execute(delete(User))
+    r = await session.execute(delete(BookShare))
+    print(f"   - Deleted {r.rowcount} book shares")
+    
+    r = await session.execute(delete(Book))
+    print(f"   - Deleted {r.rowcount} books")
+    
+    r = await session.execute(delete(EmailVerification))
+    print(f"   - Deleted {r.rowcount} email verifications")
+    
+    r = await session.execute(delete(InvitationCode))
+    print(f"   - Deleted {r.rowcount} invitation codes")
+    
+    r = await session.execute(delete(User))
+    print(f"   - Deleted {r.rowcount} users")
     
     await session.commit()
     print("✅ All users and data wiped successfully.")

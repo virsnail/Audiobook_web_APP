@@ -1,7 +1,7 @@
 import secrets
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
@@ -12,7 +12,7 @@ from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User, InvitationCode, EmailVerification
-from app.schemas.auth import Token, EmailCodeRequest, RegisterRequest, ChangePasswordRequest
+from app.schemas.auth import Token, EmailCodeRequest, RegisterRequest, ChangePasswordRequest, ForgotPasswordRequest
 from app.schemas.user import UserLogin, UserResponse
 from app.utils.security import verify_password, get_password_hash, create_access_token
 from app.utils.deps import get_current_user
@@ -22,6 +22,10 @@ from app.database import AsyncSessionLocal
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+
+# 安全限制常量
+MAX_FAILED_LOGIN_PER_DAY = 15       # 每天最多登录失败次数
+MAX_FORGOT_PASSWORD_PER_DAY = 5     # 每天最多找回密码次数
 
 
 def generate_email_code() -> str:
@@ -175,21 +179,34 @@ async def register(
 
 
 @router.post("/login", response_model=Token, summary="用户登录")
-@limiter.limit("10/minute")  # 每分钟最多 10 次登录尝试（防暴力破解）
+@limiter.limit("20/minute")  # IP 级别限流
 async def login(
     request: UserLogin,
     background_tasks: BackgroundTasks,
     request_obj: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """用户登录"""
+    """
+    用户登录
+    
+    安全机制：每日最多 15 次错误尝试，超限后当天禁止登录
+    """
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(request.password, user.password_hash):
+    if not user:
+        # 用户不存在：不要透露是邮箱还是密码错误
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="邮箱或密码错误"
+        )
+    
+    # 检查每日登录错误次数限制
+    today = date.today()
+    if user.failed_login_date == today and user.failed_login_count >= MAX_FAILED_LOGIN_PER_DAY:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"今日登录尝试次数已达上限（{MAX_FAILED_LOGIN_PER_DAY}次），请明天再试"
         )
     
     if not user.is_active:
@@ -197,6 +214,34 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被禁用"
         )
+    
+    # 验证密码
+    if not verify_password(request.password, user.password_hash):
+        # 密码错误：更新失败计数
+        if user.failed_login_date != today:
+            # 新的一天，重置计数
+            user.failed_login_count = 1
+            user.failed_login_date = today
+        else:
+            user.failed_login_count += 1
+        await db.commit()
+        
+        remaining = MAX_FAILED_LOGIN_PER_DAY - user.failed_login_count
+        if remaining <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"今日登录尝试次数已达上限（{MAX_FAILED_LOGIN_PER_DAY}次），请明天再试"
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"邮箱或密码错误（今日还可尝试 {remaining} 次）"
+        )
+    
+    # 登录成功：重置失败计数
+    user.failed_login_count = 0
+    user.failed_login_date = None
+    await db.commit()
     
     access_token = create_access_token(str(user.id))
     
@@ -297,3 +342,78 @@ async def change_password(
     await db.commit()
     
     return {"message": "密码修改成功"}
+
+
+@router.post("/forgot-password", summary="忘记密码（通过邮箱找回）")
+@limiter.limit("10/minute")  # IP 级别限流
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    request_obj: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    忘记密码：通过邮箱验证码重置密码（无需登录）
+    
+    安全机制：每个账户每天最多尝试 5 次
+    """
+    # 查找用户
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="该邮箱未注册"
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
+        )
+    
+    # 检查每日找回密码次数限制
+    today = date.today()
+    if user.forgot_password_date == today and user.forgot_password_count >= MAX_FORGOT_PASSWORD_PER_DAY:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"今日找回密码尝试次数已达上限（{MAX_FORGOT_PASSWORD_PER_DAY}次），请明天再试"
+        )
+    
+    # 更新找回密码计数
+    if user.forgot_password_date != today:
+        user.forgot_password_count = 1
+        user.forgot_password_date = today
+    else:
+        user.forgot_password_count += 1
+    
+    # 验证邮箱验证码
+    result = await db.execute(
+        select(EmailVerification)
+        .where(EmailVerification.email == request.email)
+        .where(EmailVerification.code == request.email_code)
+        .where(EmailVerification.is_used == False)
+        .where(EmailVerification.expires_at > datetime.utcnow())
+    )
+    verification = result.scalar_one_or_none()
+    
+    if not verification:
+        await db.commit()  # 保存计数
+        remaining = MAX_FORGOT_PASSWORD_PER_DAY - user.forgot_password_count
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"邮箱验证码无效或已过期（今日还可尝试 {max(0, remaining)} 次）"
+        )
+    
+    # 重置密码
+    user.password_hash = get_password_hash(request.new_password)
+    # 同时重置登录错误计数
+    user.failed_login_count = 0
+    user.failed_login_date = None
+    
+    # 标记验证码已使用
+    verification.is_used = True
+    
+    await db.commit()
+    
+    return {"message": "密码重置成功，请使用新密码登录"}
