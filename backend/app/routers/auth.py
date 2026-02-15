@@ -41,15 +41,15 @@ def generate_invitation_code() -> str:
 @router.post("/send-code", summary="发送邮箱验证码")
 @limiter.limit("3/minute")  # 每分钟最多 3 次
 async def send_email_code(
-    request: EmailCodeRequest,
-    request_obj: Request,  # slowapi 需要 Request 对象
+    body: EmailCodeRequest,
+    request: Request,  # slowapi 需要参数名为 request 的 Request 对象
     db: AsyncSession = Depends(get_db)
 ):
     """发送邮箱验证码"""
     # 检查是否已有未过期的验证码
     result = await db.execute(
         select(EmailVerification)
-        .where(EmailVerification.email == request.email)
+        .where(EmailVerification.email == body.email)
         .where(EmailVerification.is_used == False)
         .where(EmailVerification.expires_at > datetime.utcnow())
         .order_by(EmailVerification.created_at.desc())
@@ -65,7 +65,7 @@ async def send_email_code(
     # 生成新验证码
     code = generate_email_code()
     verification = EmailVerification(
-        email=request.email,
+        email=body.email,
         code=code,
         expires_at=datetime.utcnow() + timedelta(minutes=10)
     )
@@ -80,7 +80,7 @@ async def send_email_code(
     try:
         from app.utils.email import send_email
         await send_email(
-            request.email, 
+            body.email, 
             "AudioBook 验证码 / Verification Code", 
             f"""
             <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -106,13 +106,13 @@ async def send_email_code(
 @router.post("/register", response_model=Token, summary="用户注册")
 @limiter.limit("5/minute")  # 每分钟最多 5 次注册尝试
 async def register(
-    request: RegisterRequest,
-    request_obj: Request,  # slowapi 需要 Request 对象
+    body: RegisterRequest,
+    request: Request,  # slowapi 需要参数名为 request 的 Request 对象
     db: AsyncSession = Depends(get_db)
 ):
     """用户注册（需要邀请码和邮箱验证码）"""
     # 检查邮箱是否已注册
-    result = await db.execute(select(User).where(User.email == request.email))
+    result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -122,7 +122,7 @@ async def register(
     # 验证邀请码
     result = await db.execute(
         select(InvitationCode)
-        .where(InvitationCode.code == request.invitation_code)
+        .where(InvitationCode.code == body.invitation_code)
         .where(InvitationCode.is_used == False)
     )
     invitation = result.scalar_one_or_none()
@@ -142,8 +142,8 @@ async def register(
     # 验证邮箱验证码
     result = await db.execute(
         select(EmailVerification)
-        .where(EmailVerification.email == request.email)
-        .where(EmailVerification.code == request.email_code)
+        .where(EmailVerification.email == body.email)
+        .where(EmailVerification.code == body.email_code)
         .where(EmailVerification.is_used == False)
         .where(EmailVerification.expires_at > datetime.utcnow())
     )
@@ -157,9 +157,9 @@ async def register(
     
     # 创建用户
     user = User(
-        email=request.email,
-        password_hash=get_password_hash(request.password),
-        nickname=request.nickname or request.email.split("@")[0]
+        email=body.email,
+        password_hash=get_password_hash(body.password),
+        nickname=body.nickname or body.email.split("@")[0]
     )
     db.add(user)
     
@@ -181,9 +181,9 @@ async def register(
 @router.post("/login", response_model=Token, summary="用户登录")
 @limiter.limit("20/minute")  # IP 级别限流
 async def login(
-    request: UserLogin,
+    body: UserLogin,
     background_tasks: BackgroundTasks,
-    request_obj: Request,
+    request: Request,  # slowapi 需要参数名为 request 的 Request 对象
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -191,7 +191,7 @@ async def login(
     
     安全机制：每日最多 15 次错误尝试，超限后当天禁止登录
     """
-    result = await db.execute(select(User).where(User.email == request.email))
+    result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     
     if not user:
@@ -216,7 +216,7 @@ async def login(
         )
     
     # 验证密码
-    if not verify_password(request.password, user.password_hash):
+    if not verify_password(body.password, user.password_hash):
         # 密码错误：更新失败计数
         if user.failed_login_date != today:
             # 新的一天，重置计数
@@ -253,7 +253,7 @@ async def login(
         "LOGIN",
         None,
         {"email": user.email},
-        request_obj.headers.get("user-agent")
+        request.headers.get("user-agent")
     )
     
     return Token(access_token=access_token)
@@ -347,8 +347,8 @@ async def change_password(
 @router.post("/forgot-password", summary="忘记密码（通过邮箱找回）")
 @limiter.limit("10/minute")  # IP 级别限流
 async def forgot_password(
-    request: ForgotPasswordRequest,
-    request_obj: Request,
+    body: ForgotPasswordRequest,
+    request: Request,  # slowapi 需要参数名为 request 的 Request 对象
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -357,7 +357,7 @@ async def forgot_password(
     安全机制：每个账户每天最多尝试 5 次
     """
     # 查找用户
-    result = await db.execute(select(User).where(User.email == request.email))
+    result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     
     if not user:
@@ -390,8 +390,8 @@ async def forgot_password(
     # 验证邮箱验证码
     result = await db.execute(
         select(EmailVerification)
-        .where(EmailVerification.email == request.email)
-        .where(EmailVerification.code == request.email_code)
+        .where(EmailVerification.email == body.email)
+        .where(EmailVerification.code == body.email_code)
         .where(EmailVerification.is_used == False)
         .where(EmailVerification.expires_at > datetime.utcnow())
     )
@@ -406,7 +406,7 @@ async def forgot_password(
         )
     
     # 重置密码
-    user.password_hash = get_password_hash(request.new_password)
+    user.password_hash = get_password_hash(body.new_password)
     # 同时重置登录错误计数
     user.failed_login_count = 0
     user.failed_login_date = None
