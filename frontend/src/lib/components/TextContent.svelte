@@ -366,9 +366,12 @@
     return top >= vh * 0.15 && bottom <= vh * 0.85;
   }
 
-  /** 获取 segment 所属的“段落/块”（同一 <p> 或同一 .code-block），用于仅在新段落首次高亮时滚动 */
-  function getSegmentBlock(el: HTMLElement): Element | null {
-    return el.closest("p") || el.closest(".code-block") || el.parentElement;
+  /** 判断是否为“新的一行”（垂直位置变化超过阈值），用于自动滚动时按行跟滚，避免整段一大块只滚一次 */
+  function isNewScrollLine(newEl: HTMLElement, oldEl: HTMLElement | null): boolean {
+    if (!oldEl) return true;
+    const newTop = newEl.getBoundingClientRect().top;
+    const oldTop = oldEl.getBoundingClientRect().top;
+    return Math.abs(newTop - oldTop) > 18;
   }
 
   function updateHighlight() {
@@ -413,10 +416,8 @@
         }
 
         if (autoScroll && isPlaying) {
-          const newBlock = getSegmentBlock(newHighlight);
-          const oldBlock = oldHighlight ? getSegmentBlock(oldHighlight) : null;
-          const isNewBlock = newBlock !== oldBlock;
-          if (isNewBlock && !isHighlightInComfortZone(newHighlight)) {
+          const isNewLine = isNewScrollLine(newHighlight, oldHighlight);
+          if (isNewLine && !isHighlightInComfortZone(newHighlight)) {
             scrollHighlightIntoView(newHighlight);
           }
         }

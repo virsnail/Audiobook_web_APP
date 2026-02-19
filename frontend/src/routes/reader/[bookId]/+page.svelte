@@ -315,6 +315,18 @@
     }
     textContentRef?.scrollToSegment(b.segment_index);
   }
+
+  async function handleDeleteBookmark(b: BookmarkItem) {
+    try {
+      await deleteBookmark(data.bookId, b.id);
+      bookmarks = bookmarks.filter((x) => x.id !== b.id);
+      bookmarkMessage = "已删除书签 Bookmark removed";
+      setTimeout(() => (bookmarkMessage = ""), 2000);
+    } catch (e) {
+      bookmarkMessage = e instanceof Error ? e.message : "删除失败 Failed";
+      setTimeout(() => (bookmarkMessage = ""), 3000);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -521,12 +533,30 @@
               <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">暂无书签 No bookmarks</p>
             {:else}
               {#each bookmarks as b}
-                <button
-                  onclick={() => handleGoToBookmark(b)}
-                  class="w-full px-4 py-2.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 truncate"
+                <div
+                  class="flex items-center gap-1 w-full group border-b border-gray-100 dark:border-gray-700 last:border-0"
                 >
-                  {b.snippet || `段落 ${b.segment_index + 1}`}
-                </button>
+                  <button
+                    onclick={() => handleGoToBookmark(b)}
+                    class="flex-1 min-w-0 px-4 py-2.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 truncate"
+                  >
+                    {b.snippet || `段落 ${b.segment_index + 1}`}
+                  </button>
+                  <button
+                    type="button"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteBookmark(b);
+                    }}
+                    class="shrink-0 p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    title="删除此书签 Delete bookmark"
+                    aria-label="删除书签"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
               {/each}
             {/if}
           </div>
