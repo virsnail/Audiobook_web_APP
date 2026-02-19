@@ -193,6 +193,7 @@
       setFontSize(18);
     }
 
+    // 恢复上次自动滚动状态
     const savedAutoScroll = localStorage.getItem("reader_auto_scroll");
     if (savedAutoScroll === "true") autoScroll = true;
   });
@@ -231,6 +232,7 @@
     );
   }
 
+  // 自动滚动状态持久化：状态改变时保存到 localStorage
   $effect(() => {
     if (autoScroll !== undefined) {
       localStorage.setItem("reader_auto_scroll", String(autoScroll));
@@ -239,14 +241,16 @@
 
   // 获取选中文字所在 segment 的 globalId，若无选中则用当前播放的 segment
   function getCurrentSegmentGlobalId(): number | null {
-    const sel = typeof document !== "undefined" ? document.getSelection() : null;
+    const sel =
+      typeof document !== "undefined" ? document.getSelection() : null;
     if (sel && sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       if (!range.collapsed) {
         const startNode = range.startContainer;
-        const segmentEl = (startNode.nodeType === Node.TEXT_NODE
-          ? startNode.parentElement
-          : startNode
+        const segmentEl = (
+          startNode.nodeType === Node.TEXT_NODE
+            ? startNode.parentElement
+            : startNode
         )?.closest?.(".segment") as HTMLElement | null;
         if (segmentEl) {
           const id = segmentEl.dataset.globalId;
@@ -285,7 +289,8 @@
   async function handleAddBookmark() {
     const globalId = getCurrentSegmentGlobalId();
     if (globalId === null) {
-      bookmarkMessage = "请选择文字或播放音频后再添加书签。Please select text or play audio first.";
+      bookmarkMessage =
+        "请选择文字或播放音频后再添加书签。Please select text or play audio first.";
       return;
     }
     try {
@@ -500,8 +505,18 @@
           class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
           title="添加书签 Add Bookmark"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+            />
           </svg>
         </button>
         <button
@@ -509,8 +524,18 @@
           class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           title="书签列表 Bookmarks"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+            />
           </svg>
         </button>
         {#if showBookmarksDropdown}
@@ -528,9 +553,13 @@
             class="absolute left-0 top-full mt-2 w-72 max-h-64 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 py-2"
           >
             {#if bookmarksLoading}
-              <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">加载中... Loading...</p>
+              <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                加载中... Loading...
+              </p>
             {:else if bookmarks.length === 0}
-              <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">暂无书签 No bookmarks</p>
+              <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                暂无书签 No bookmarks
+              </p>
             {:else}
               {#each bookmarks as b}
                 <div
@@ -552,8 +581,18 @@
                     title="删除此书签 Delete bookmark"
                     aria-label="删除书签"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
                     </svg>
                   </button>
                 </div>
@@ -563,7 +602,12 @@
         {/if}
       </div>
       {#if bookmarkMessage}
-        <p class="text-xs text-amber-600 dark:text-amber-400 max-w-[8rem] truncate" role="status">{bookmarkMessage}</p>
+        <p
+          class="text-xs text-amber-600 dark:text-amber-400 max-w-[8rem] truncate"
+          role="status"
+        >
+          {bookmarkMessage}
+        </p>
       {/if}
 
       <!-- 书名 -->
@@ -630,11 +674,11 @@
     -->
 
       <!-- 全书进度：固定宽度 + 导角细框，避免数字变化导致按钮抖动 -->
-      <div
-        class="progress-badge"
-      >
+      <div class="progress-badge">
         {#if chaptersStore.totalDuration > 0}
-          {((currentGlobalTime / chaptersStore.totalDuration) * 100).toFixed(2)}%
+          {((currentGlobalTime / chaptersStore.totalDuration) * 100).toFixed(
+            2,
+          )}%
         {:else}
           0.00%
         {/if}
@@ -649,7 +693,7 @@
       bind:this={textContentRef}
       {currentGlobalTime}
       {isPlaying}
-      autoScroll={autoScroll}
+      {autoScroll}
       onSeekTo={handleTextSeek}
     />
   </main>

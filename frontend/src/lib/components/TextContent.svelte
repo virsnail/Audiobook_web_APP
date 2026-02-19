@@ -28,14 +28,8 @@
       // 注册常用语言
       const langs: [string, () => Promise<any>][] = [
         ["python", () => import("highlight.js/lib/languages/python")],
-        [
-          "javascript",
-          () => import("highlight.js/lib/languages/javascript"),
-        ],
-        [
-          "typescript",
-          () => import("highlight.js/lib/languages/typescript"),
-        ],
+        ["javascript", () => import("highlight.js/lib/languages/javascript")],
+        ["typescript", () => import("highlight.js/lib/languages/typescript")],
         ["bash", () => import("highlight.js/lib/languages/bash")],
         ["shell", () => import("highlight.js/lib/languages/shell")],
         ["json", () => import("highlight.js/lib/languages/json")],
@@ -48,10 +42,7 @@
         ["go", () => import("highlight.js/lib/languages/go")],
         ["rust", () => import("highlight.js/lib/languages/rust")],
         ["yaml", () => import("highlight.js/lib/languages/yaml")],
-        [
-          "markdown",
-          () => import("highlight.js/lib/languages/markdown"),
-        ],
+        ["markdown", () => import("highlight.js/lib/languages/markdown")],
         ["diff", () => import("highlight.js/lib/languages/diff")],
         ["http", () => import("highlight.js/lib/languages/http")],
       ];
@@ -88,7 +79,12 @@
     onSeekTo?: (globalTime: number, chapterIndex: number) => void;
   }
 
-  let { currentGlobalTime = 0, isPlaying = false, autoScroll = false, onSeekTo }: Props = $props();
+  let {
+    currentGlobalTime = 0,
+    isPlaying = false,
+    autoScroll = false,
+    onSeekTo,
+  }: Props = $props();
 
   let containerRef: HTMLElement | null = $state(null);
   let chapterRefs: Map<number, HTMLElement> = new Map();
@@ -100,13 +96,13 @@
   // ========== 安全限制常量 ==========
   // 防止超大文本或异常数据导致浏览器卡死
   const SAFETY_LIMITS = {
-    MAX_TEXT_LENGTH: 500_000,      // 单章节最大字符数（500KB）
-    MAX_LINES: 20_000,             // formatWithCodeBlocks 最大处理行数
-    MAX_CODE_LINES: 5_000,         // 单个代码块最大行数
-    MAX_SEGMENTS: 10_000,          // renderChapter 最大 segment 数
-    MAX_CODE_BLOCKS_HIGHLIGHT: 100,// hljs 单次最大高亮代码块数
-    MAX_RENDER_TIME_MS: 3_000,     // 单次渲染超时（毫秒）
-    HIGHLIGHT_THROTTLE_MS: 250,    // updateHighlight 节流间隔
+    MAX_TEXT_LENGTH: 500_000, // 单章节最大字符数（500KB）
+    MAX_LINES: 20_000, // formatWithCodeBlocks 最大处理行数
+    MAX_CODE_LINES: 5_000, // 单个代码块最大行数
+    MAX_SEGMENTS: 10_000, // renderChapter 最大 segment 数
+    MAX_CODE_BLOCKS_HIGHLIGHT: 100, // hljs 单次最大高亮代码块数
+    MAX_RENDER_TIME_MS: 3_000, // 单次渲染超时（毫秒）
+    HIGHLIGHT_THROTTLE_MS: 250, // updateHighlight 节流间隔
   } as const;
 
   // HTML 转义
@@ -193,7 +189,9 @@
     // 安全限制：行数检查
     const maxLines = Math.min(lines.length, SAFETY_LIMITS.MAX_LINES);
     if (lines.length > SAFETY_LIMITS.MAX_LINES) {
-      console.warn(`[安全限制] formatWithCodeBlocks: 文本行数 ${lines.length} 超过限制 ${SAFETY_LIMITS.MAX_LINES}，截断处理`);
+      console.warn(
+        `[安全限制] formatWithCodeBlocks: 文本行数 ${lines.length} 超过限制 ${SAFETY_LIMITS.MAX_LINES}，截断处理`,
+      );
     }
 
     const startTime = performance.now();
@@ -202,7 +200,9 @@
       // 安全限制：超时检查（每 500 行检查一次）
       if (idx > 0 && idx % 500 === 0) {
         if (performance.now() - startTime > SAFETY_LIMITS.MAX_RENDER_TIME_MS) {
-          console.warn(`[安全限制] formatWithCodeBlocks: 处理耗时超过 ${SAFETY_LIMITS.MAX_RENDER_TIME_MS}ms，已处理 ${idx}/${maxLines} 行，停止`);
+          console.warn(
+            `[安全限制] formatWithCodeBlocks: 处理耗时超过 ${SAFETY_LIMITS.MAX_RENDER_TIME_MS}ms，已处理 ${idx}/${maxLines} 行，停止`,
+          );
           break;
         }
       }
@@ -258,8 +258,12 @@
     // 安全限制：文本长度检查
     let safeText = textContent;
     if (textContent.length > SAFETY_LIMITS.MAX_TEXT_LENGTH) {
-      console.warn(`[安全限制] renderChapter: 文本长度 ${textContent.length} 超过限制 ${SAFETY_LIMITS.MAX_TEXT_LENGTH}，截断处理`);
-      safeText = textContent.substring(0, SAFETY_LIMITS.MAX_TEXT_LENGTH) + "\n\n[... 文本过长，已截断 ...]";
+      console.warn(
+        `[安全限制] renderChapter: 文本长度 ${textContent.length} 超过限制 ${SAFETY_LIMITS.MAX_TEXT_LENGTH}，截断处理`,
+      );
+      safeText =
+        textContent.substring(0, SAFETY_LIMITS.MAX_TEXT_LENGTH) +
+        "\n\n[... 文本过长，已截断 ...]";
     }
 
     if (!segments || segments.length === 0) {
@@ -272,11 +276,14 @@
     }
 
     // 安全限制：segment 数量检查
-    const safeSegments = segments.length > SAFETY_LIMITS.MAX_SEGMENTS
-      ? segments.slice(0, SAFETY_LIMITS.MAX_SEGMENTS)
-      : segments;
+    const safeSegments =
+      segments.length > SAFETY_LIMITS.MAX_SEGMENTS
+        ? segments.slice(0, SAFETY_LIMITS.MAX_SEGMENTS)
+        : segments;
     if (segments.length > SAFETY_LIMITS.MAX_SEGMENTS) {
-      console.warn(`[安全限制] renderChapter: segment 数量 ${segments.length} 超过限制 ${SAFETY_LIMITS.MAX_SEGMENTS}，截断处理`);
+      console.warn(
+        `[安全限制] renderChapter: segment 数量 ${segments.length} 超过限制 ${SAFETY_LIMITS.MAX_SEGMENTS}，截断处理`,
+      );
     }
 
     // 有对齐数据，精确匹配渲染
@@ -288,7 +295,9 @@
       // 安全限制：超时检查（每 500 个 segment 检查一次）
       if (i > 0 && i % 500 === 0) {
         if (performance.now() - startTime > SAFETY_LIMITS.MAX_RENDER_TIME_MS) {
-          console.warn(`[安全限制] renderChapter: segment 匹配耗时超过 ${SAFETY_LIMITS.MAX_RENDER_TIME_MS}ms，已处理 ${i}/${safeSegments.length}，停止`);
+          console.warn(
+            `[安全限制] renderChapter: segment 匹配耗时超过 ${SAFETY_LIMITS.MAX_RENDER_TIME_MS}ms，已处理 ${i}/${safeSegments.length}，停止`,
+          );
           break;
         }
       }
@@ -345,7 +354,7 @@
   let _highlightTimer: ReturnType<typeof setTimeout> | null = null;
   let _lastHighlightTime = 0;
 
-  /** 将当前高亮元素滚动到视口内（约 35% 处），自动滚动模式下使用瞬时滚动避免被取消 */
+  /** 将当前高亮元素平滑滚动到视口内（约 35% 高度处），便于跟读 */
   function scrollHighlightIntoView(el: HTMLElement) {
     const rect = el.getBoundingClientRect();
     const absoluteTop = window.scrollY + rect.top;
@@ -353,31 +362,42 @@
     const clamped = Math.max(0, targetScroll);
     window.scrollTo({
       top: clamped,
-      behavior: autoScroll ? "auto" : "smooth",
+      behavior: "smooth",
     });
   }
 
-  /** 当前高亮是否在“舒适可见”区域内（约视口 15%～85%），用于自动滚动时判断是否需要跟滚 */
+  /**
+   * 当前高亮元素是否在“舒适可见”区域内（视口 30%～70%）
+   * 用于自动滚动时判断是否需要滚动
+   * 需求：超出 30%-70% 范围时才自动滚动
+   */
   function isHighlightInComfortZone(el: HTMLElement): boolean {
     const rect = el.getBoundingClientRect();
     const vh = window.innerHeight;
     const top = rect.top;
     const bottom = rect.bottom;
-    return top >= vh * 0.15 && bottom <= vh * 0.85;
+    return top >= vh * 0.3 && bottom <= vh * 0.7;
   }
 
-  /** 判断是否为“新的一行”（垂直位置变化超过阈值），用于自动滚动时按行跟滚，避免整段一大块只滚一次 */
-  function isNewScrollLine(newEl: HTMLElement, oldEl: HTMLElement | null): boolean {
-    if (!oldEl) return true;
-    const newTop = newEl.getBoundingClientRect().top;
-    const oldTop = oldEl.getBoundingClientRect().top;
-    return Math.abs(newTop - oldTop) > 18;
-  }
+  /**
+   * 上一次自动滚动检测过的 segment globalId
+   * 用于确保每个 segment 只在其第一个 word 高亮时检测和滚动一次
+   */
+  let _lastAutoScrollSegId = -1;
+
+  // 当 autoScroll 被切换为 ON 时，重置 _lastAutoScrollSegId
+  // 这样当前正在播放的 segment 会立刻被检测，触发一次滚动
+  $effect(() => {
+    if (autoScroll) {
+      _lastAutoScrollSegId = -1;
+    }
+  });
 
   function updateHighlight() {
     if (!containerRef) return;
 
-    const throttleMs = autoScroll && isPlaying ? 80 : SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS;
+    const throttleMs =
+      autoScroll && isPlaying ? 80 : SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS;
     const now = performance.now();
     if (now - _lastHighlightTime < throttleMs) {
       if (_highlightTimer) clearTimeout(_highlightTimer);
@@ -387,7 +407,9 @@
     _lastHighlightTime = now;
     _highlightTimer = null;
 
-    const oldHighlight = containerRef.querySelector(".segment.active") as HTMLElement | null;
+    const oldHighlight = containerRef.querySelector(
+      ".segment.active",
+    ) as HTMLElement | null;
     if (oldHighlight) {
       oldHighlight.classList.remove("active");
     }
@@ -415,9 +437,16 @@
           newHighlight.classList.add("active");
         }
 
-        if (autoScroll && isPlaying) {
-          const isNewLine = isNewScrollLine(newHighlight, oldHighlight);
-          if (isNewLine && !isHighlightInComfortZone(newHighlight)) {
+        // 自动滚动逻辑：
+        // 仅当切换到新的 segment 时检测位置并可能滚动
+        // 不对同一 segment 内的每个 word 都检测
+        if (
+          autoScroll &&
+          isPlaying &&
+          currentSeg.globalId !== _lastAutoScrollSegId
+        ) {
+          _lastAutoScrollSegId = currentSeg.globalId!;
+          if (!isHighlightInComfortZone(newHighlight)) {
             scrollHighlightIntoView(newHighlight);
           }
         }
@@ -428,7 +457,9 @@
   // 暴露给父组件：滚动到指定 segment（用于书签跳转）
   export function scrollToSegment(globalSegmentId: number) {
     if (!containerRef) return;
-    const el = containerRef.querySelector(`[data-global-id="${globalSegmentId}"]`);
+    const el = containerRef.querySelector(
+      `[data-global-id="${globalSegmentId}"]`,
+    );
     if (el) {
       const rect = (el as HTMLElement).getBoundingClientRect();
       const absoluteTop = window.scrollY + rect.top;
@@ -518,17 +549,23 @@
   // hljs 加载完成后，对页面上已有的代码块进行语法高亮（含数量限制）
   $effect(() => {
     if (hljs && containerRef) {
-      const blocks = containerRef.querySelectorAll(".code-block pre code:not(.hljs)");
-      const maxBlocks = Math.min(blocks.length, SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT);
+      const blocks = containerRef.querySelectorAll(
+        ".code-block pre code:not(.hljs)",
+      );
+      const maxBlocks = Math.min(
+        blocks.length,
+        SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT,
+      );
       if (blocks.length > SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT) {
-        console.warn(`[安全限制] hljs: 代码块数量 ${blocks.length} 超过限制 ${SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT}，仅高亮前 ${maxBlocks} 个`);
+        console.warn(
+          `[安全限制] hljs: 代码块数量 ${blocks.length} 超过限制 ${SAFETY_LIMITS.MAX_CODE_BLOCKS_HIGHLIGHT}，仅高亮前 ${maxBlocks} 个`,
+        );
       }
 
       for (let i = 0; i < maxBlocks; i++) {
         const block = blocks[i];
-        const lang = (
-          block.closest(".code-block") as HTMLElement
-        )?.dataset.language;
+        const lang = (block.closest(".code-block") as HTMLElement)?.dataset
+          .language;
         if (lang) {
           try {
             const langLower = lang.toLowerCase();
@@ -536,7 +573,9 @@
               const raw = block.textContent || "";
               // 安全限制：单个代码块内容过大时跳过高亮
               if (raw.length > 50_000) {
-                console.warn(`[安全限制] hljs: 代码块内容过大 (${raw.length} 字符)，跳过高亮`);
+                console.warn(
+                  `[安全限制] hljs: 代码块内容过大 (${raw.length} 字符)，跳过高亮`,
+                );
                 block.classList.add("hljs"); // 标记为已处理，避免反复尝试
                 continue;
               }
@@ -634,7 +673,10 @@
     border-radius: 6px;
     margin: 1em 0;
     overflow-x: auto;
-    line-height: var(--reader-code-line-height, 1.25); /* 在容器级重置行高，覆盖 .reader-container 的 1.8 */
+    line-height: var(
+      --reader-code-line-height,
+      1.25
+    ); /* 在容器级重置行高，覆盖 .reader-container 的 1.8 */
   }
 
   .chapter-content :global(.code-block .code-lang) {
@@ -642,16 +684,8 @@
     font-size: var(--reader-code-font-size, 0.75em);
     color: var(--reader-muted, #6a737d);
     border-bottom: 1px solid var(--reader-code-border, #e1e4e8);
-    font-family:
-      "JetBrains Mono",
-      "Fira Code",
-      "SF Mono",
-      "Cascadia Code",
-      "Source Code Pro",
-      Menlo,
-      Consolas,
-      "Liberation Mono",
-      monospace;
+    font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code",
+      "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
   .chapter-content :global(.code-block pre) {
@@ -660,16 +694,8 @@
   }
 
   .chapter-content :global(.code-block code) {
-    font-family:
-      "JetBrains Mono",
-      "Fira Code",
-      "SF Mono",
-      "Cascadia Code",
-      "Source Code Pro",
-      Menlo,
-      Consolas,
-      "Liberation Mono",
-      monospace;
+    font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code",
+      "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace;
     font-size: var(--reader-code-font-size, 0.75em);
     line-height: var(--reader-code-line-height, 1.25);
     white-space: pre;
@@ -678,16 +704,8 @@
 
   /* 行内代码样式 */
   .chapter-content :global(.inline-code) {
-    font-family:
-      "JetBrains Mono",
-      "Fira Code",
-      "SF Mono",
-      "Cascadia Code",
-      "Source Code Pro",
-      Menlo,
-      Consolas,
-      "Liberation Mono",
-      monospace;
+    font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code",
+      "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace;
     background-color: var(--reader-code-bg, #f6f8fa);
     padding: 0.1em 0.35em;
     border-radius: 3px;
