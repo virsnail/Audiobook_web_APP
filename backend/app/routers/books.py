@@ -1452,6 +1452,9 @@ async def delete_book(
         logger = logging.getLogger(__name__)
         logger.warning(f"Book directory not found: {full_path}, proceeding to delete DB record only")
     
+    # 按书籍 ID 删除该书下所有用户的书签（显式级联，不依赖 DB 外键）
+    await db.execute(delete(Bookmark).where(Bookmark.book_id == book_id))
+    
     # 删除数据库记录（包括级联删除相关的 shares 和 reading_progress）
     await db.delete(book)
     await db.commit()
