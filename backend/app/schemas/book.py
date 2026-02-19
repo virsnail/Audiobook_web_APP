@@ -14,6 +14,11 @@ class BookCreate(BookBase):
     pass
 
 
+class BookUpdate(BaseModel):
+    """仅允许更新书名（所有者）"""
+    title: str = Field(..., min_length=1, max_length=500)
+
+
 class BookResponse(BookBase):
     id: UUID
     owner_id: UUID
@@ -56,3 +61,20 @@ class BookProgressResponse(BaseModel):
 class ShareCreate(BaseModel):
     book_id: UUID
     shared_to_email: Optional[str] = None  # None 表示公开分享
+
+
+class BookmarkCreate(BaseModel):
+    """创建书签：基于段落（segment）"""
+    segment_index: int = Field(..., ge=0, le=2_000_000, description="全局 segment 索引")
+    snippet: Optional[str] = Field(None, max_length=500, description="摘要文本，用于列表展示")
+
+
+class BookmarkResponse(BaseModel):
+    id: UUID
+    book_id: UUID
+    segment_index: int
+    snippet: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -7,6 +7,7 @@
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import {
     getBooks,
+    updateBook,
     deleteBook,
     shareBook,
     getBookShares,
@@ -51,6 +52,13 @@
   let codeSent = $state(false); // [NEW] 验证码发送状态
   let codeSending = $state(false); // [NEW] 验证码发送中
   let countdown = $state(0); // [NEW] 倒计时
+
+  // 修改书名
+  let showEditTitleDialog = $state(false);
+  let editTitleBookId = $state("");
+  let editTitleValue = $state("");
+  let editTitleLoading = $state(false);
+  let editTitleError = $state("");
 
   // 初始化
   onMount(async () => {
@@ -121,6 +129,33 @@
       await loadBooks();
     } catch (e) {
       alert("删除失败 Failed to delete");
+    }
+  }
+
+  // 修改书名
+  function openEditTitleDialog(book: Book) {
+    editTitleBookId = book.id;
+    editTitleValue = book.title;
+    editTitleError = "";
+    showEditTitleDialog = true;
+  }
+
+  async function handleSaveEditTitle() {
+    const title = editTitleValue.trim();
+    if (!title) {
+      editTitleError = "请输入书名 Please enter a title";
+      return;
+    }
+    editTitleLoading = true;
+    editTitleError = "";
+    try {
+      await updateBook(editTitleBookId, { title });
+      await loadBooks();
+      showEditTitleDialog = false;
+    } catch (e) {
+      editTitleError = e instanceof Error ? e.message : "修改失败 Failed to update";
+    } finally {
+      editTitleLoading = false;
     }
   }
 
@@ -485,13 +520,33 @@
                   {/if}
                 </div>
 
-                <!-- 分享和删除按钮：仅对自己的书显示 -->
+                <!-- 修改书名、分享、删除：仅对自己的书显示 -->
                 {#if book.owner_id === authStore.user?.id}
                   <div class="flex items-center gap-2">
+                    <!-- 修改书名 -->
+                    <button
+                      onclick={() => openEditTitleDialog(book)}
+                      class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 dark:hover:text-amber-400 rounded-lg transition-colors"
+                      title="修改书名 Edit Title"
+                    >
+                      <svg
+                        class="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                        />
+                      </svg>
+                    </button>
                     <!-- 分享按钮 -->
                     <button
                       onclick={() => openShareDialog(book.id)}
-                      class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                      class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 rounded-lg transition-colors"
                       title="分享 Share"
                     >
                       <svg
@@ -807,13 +862,55 @@
 
       <button
         onclick={() => (showShareDialog = false)}
-        class="w-full mt-4 py-2 text-gray-500 hover:text-gray-700"
+        class="w-full mt-4 py-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
       >
         取消 Cancel
       </button>
     </div>
   </div>
 {/if}
+
+<!-- 修改书名对话框 -->
+{#if showEditTitleDialog}
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+  >
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6">
+      <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+        修改书名 Edit Title
+      </h3>
+      <input
+        type="text"
+        bind:value={editTitleValue}
+        placeholder="书名 Book title"
+        class="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+      />
+      {#if editTitleError}
+        <p class="text-red-500 text-sm mb-3">{editTitleError}</p>
+      {/if}
+      <div class="flex gap-3">
+        <button
+          onclick={() => (showEditTitleDialog = false)}
+          class="flex-1 py-2.5 text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+        >
+          取消 Cancel
+        </button>
+        <button
+          onclick={handleSaveEditTitle}
+          disabled={editTitleLoading}
+          class="flex-1 py-2.5 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 disabled:opacity-50 transition-colors"
+        >
+          {#if editTitleLoading}
+            保存中...
+          {:else}
+            保存 Save
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- 修改密码对话框 -->
 {#if showPasswordDialog}
   <div

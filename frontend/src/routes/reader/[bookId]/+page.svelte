@@ -13,7 +13,13 @@
   import AudioPlayer from "$lib/components/AudioPlayer.svelte";
   import TextContent from "$lib/components/TextContent.svelte";
   import { chaptersStore } from "$lib/stores/chapters.svelte";
-  import { logActivity } from "$lib/utils/api";
+  import {
+    logActivity,
+    getBookmarks,
+    createBookmark,
+    deleteBookmark,
+    type BookmarkItem,
+  } from "$lib/utils/api";
   import type { BookManifest, Segment } from "$lib/types/chapter";
 
   interface PageData {
@@ -166,6 +172,13 @@
   // --- 主题与字体控制 ---
   let theme = $state("light");
   let fontSize = $state(18);
+  let autoScroll = $state(false);
+
+  // 书签
+  let bookmarks = $state<BookmarkItem[]>([]);
+  let showBookmarksDropdown = $state(false);
+  let bookmarksLoading = $state(false);
+  let bookmarkMessage = $state("");
 
   onMount(() => {
     // 初始化主题
@@ -179,6 +192,9 @@
     } else {
       setFontSize(18);
     }
+
+    const savedAutoScroll = localStorage.getItem("reader_auto_scroll");
+    if (savedAutoScroll === "true") autoScroll = true;
   });
 
   function setTheme(t: string) {
@@ -213,6 +229,91 @@
       "--reader-font-size",
       `${newSize}px`,
     );
+  }
+
+  $effect(() => {
+    if (autoScroll !== undefined) {
+      localStorage.setItem("reader_auto_scroll", String(autoScroll));
+    }
+  });
+
+  // 获取选中文字所在 segment 的 globalId，若无选中则用当前播放的 segment
+  function getCurrentSegmentGlobalId(): number | null {
+    const sel = typeof document !== "undefined" ? document.getSelection() : null;
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      if (!range.collapsed) {
+        const startNode = range.startContainer;
+        const segmentEl = (startNode.nodeType === Node.TEXT_NODE
+          ? startNode.parentElement
+          : startNode
+        )?.closest?.(".segment") as HTMLElement | null;
+        if (segmentEl) {
+          const id = segmentEl.dataset.globalId;
+          if (id !== undefined) return parseInt(id, 10);
+        }
+      }
+    }
+    const { chapterIndex, chapterTime } =
+      chaptersStore.globalToChapterTime(currentGlobalTime);
+    const chapter = chaptersStore.chapters[chapterIndex];
+    if (!chapter?.segments) return null;
+    const seg = chapter.segments.find(
+      (s) => chapterTime >= s.start && chapterTime <= s.end,
+    );
+    return seg?.globalId ?? null;
+  }
+
+  function getCurrentSegmentSnippet(): string {
+    const id = getCurrentSegmentGlobalId();
+    if (id === null) return "";
+    const found = chaptersStore.findSegmentByGlobalId(id);
+    return found?.segment?.text?.slice(0, 80)?.trim() || "";
+  }
+
+  async function loadBookmarks() {
+    bookmarksLoading = true;
+    try {
+      bookmarks = await getBookmarks(data.bookId);
+    } catch {
+      bookmarks = [];
+    } finally {
+      bookmarksLoading = false;
+    }
+  }
+
+  async function handleAddBookmark() {
+    const globalId = getCurrentSegmentGlobalId();
+    if (globalId === null) {
+      bookmarkMessage = "请选择文字或播放音频后再添加书签。Please select text or play audio first.";
+      return;
+    }
+    try {
+      const snippet = getCurrentSegmentSnippet();
+      await createBookmark(data.bookId, {
+        segment_index: globalId,
+        snippet: snippet || undefined,
+      });
+      await loadBookmarks();
+      bookmarkMessage = "书签已添加 Bookmark added";
+      setTimeout(() => (bookmarkMessage = ""), 2000);
+    } catch (e) {
+      bookmarkMessage = e instanceof Error ? e.message : "添加失败 Failed";
+    }
+  }
+
+  function openBookmarksDropdown() {
+    showBookmarksDropdown = !showBookmarksDropdown;
+    if (showBookmarksDropdown) loadBookmarks();
+  }
+
+  async function handleGoToBookmark(b: BookmarkItem) {
+    showBookmarksDropdown = false;
+    const found = chaptersStore.findSegmentByGlobalId(b.segment_index);
+    if (found?.segment?.globalStart != null) {
+      handleTextSeek(found.segment.globalStart!, found.chapter.index);
+    }
+    textContentRef?.scrollToSegment(b.segment_index);
   }
 </script>
 
@@ -380,6 +481,61 @@
         </button>
       </div>
 
+      <!-- 书签：添加 + 列表 -->
+      <div class="relative flex items-center gap-1">
+        <button
+          onclick={handleAddBookmark}
+          class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+          title="添加书签 Add Bookmark"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+        </button>
+        <button
+          onclick={openBookmarksDropdown}
+          class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+          title="书签列表 Bookmarks"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        </button>
+        {#if showBookmarksDropdown}
+          <div
+            class="fixed inset-0 z-40"
+            role="button"
+            tabindex="-1"
+            aria-label="关闭书签列表 Close bookmarks"
+            onclick={() => (showBookmarksDropdown = false)}
+            onkeydown={(e) => {
+              if (e.key === "Escape") showBookmarksDropdown = false;
+            }}
+          ></div>
+          <div
+            class="absolute left-0 top-full mt-2 w-72 max-h-64 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 py-2"
+          >
+            {#if bookmarksLoading}
+              <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">加载中... Loading...</p>
+            {:else if bookmarks.length === 0}
+              <p class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">暂无书签 No bookmarks</p>
+            {:else}
+              {#each bookmarks as b}
+                <button
+                  onclick={() => handleGoToBookmark(b)}
+                  class="w-full px-4 py-2.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 truncate"
+                >
+                  {b.snippet || `段落 ${b.segment_index + 1}`}
+                </button>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+      {#if bookmarkMessage}
+        <p class="text-xs text-amber-600 dark:text-amber-400 max-w-[8rem] truncate" role="status">{bookmarkMessage}</p>
+      {/if}
+
       <!-- 书名 -->
       <h1 class="text-lg font-medium truncate flex-1 leading-snug text-center">
         {data.bookTitle || "未命名书籍 Untitled"}
@@ -463,6 +619,7 @@
       bind:this={textContentRef}
       {currentGlobalTime}
       {isPlaying}
+      autoScroll={autoScroll}
       onSeekTo={handleTextSeek}
     />
   </main>
@@ -472,6 +629,7 @@
     bind:this={audioPlayerRef}
     audioSrc={currentAudioSrc}
     {currentChapterIndex}
+    bind:autoScroll
     onTimeUpdate={handleTimeUpdate}
     onChapterEnd={handleChapterEnd}
     onLocate={handleLocate}

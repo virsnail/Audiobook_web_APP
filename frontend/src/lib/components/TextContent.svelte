@@ -84,10 +84,11 @@
   interface Props {
     currentGlobalTime?: number; // 当前全局播放时间
     isPlaying?: boolean; // 音频是否正在播放
+    autoScroll?: boolean; // 是否随播放自动滚动到当前句
     onSeekTo?: (globalTime: number, chapterIndex: number) => void;
   }
 
-  let { currentGlobalTime = 0, isPlaying = false, onSeekTo }: Props = $props();
+  let { currentGlobalTime = 0, isPlaying = false, autoScroll = false, onSeekTo }: Props = $props();
 
   let containerRef: HTMLElement | null = $state(null);
   let chapterRefs: Map<number, HTMLElement> = new Map();
@@ -380,14 +381,36 @@
 
       const newHighlight = containerRef.querySelector(
         `[data-global-id="${currentSeg.globalId}"]`,
-      );
+      ) as HTMLElement | null;
       if (newHighlight !== oldHighlight) {
         oldHighlight?.classList.remove("active");
         newHighlight?.classList.add("active");
 
-        // 移除自动滚动，改为手动触发
-        // if (isPlaying && newHighlight) { ... }
+        if (autoScroll && isPlaying && newHighlight) {
+          const rect = newHighlight.getBoundingClientRect();
+          const absoluteTop = window.scrollY + rect.top;
+          const targetScroll = absoluteTop - window.innerHeight * 0.35;
+          window.scrollTo({
+            top: Math.max(0, targetScroll),
+            behavior: "smooth",
+          });
+        }
       }
+    }
+  }
+
+  // 暴露给父组件：滚动到指定 segment（用于书签跳转）
+  export function scrollToSegment(globalSegmentId: number) {
+    if (!containerRef) return;
+    const el = containerRef.querySelector(`[data-global-id="${globalSegmentId}"]`);
+    if (el) {
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      const absoluteTop = window.scrollY + rect.top;
+      const targetScroll = absoluteTop - window.innerHeight * 0.35;
+      window.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: "smooth",
+      });
     }
   }
 

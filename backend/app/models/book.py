@@ -32,6 +32,7 @@ class Book(Base):
     owner = relationship("User", back_populates="books")
     shares = relationship("BookShare", back_populates="book", cascade="all, delete-orphan")
     reading_progress = relationship("ReadingProgress", back_populates="book", cascade="all, delete-orphan")
+    bookmarks = relationship("Bookmark", back_populates="book", cascade="all, delete-orphan")
 
 
 class BookShare(Base):
@@ -63,3 +64,18 @@ class ReadingProgress(Base):
     # 关系
     user = relationship("User", back_populates="reading_progress")
     book = relationship("Book", back_populates="reading_progress")
+
+
+class Bookmark(Base):
+    """书签表：每用户每本书的段落书签"""
+    __tablename__ = "bookmarks"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    book_id = Column(UUID(as_uuid=True), ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True)
+    segment_index = Column(Integer, nullable=False)  # 全局 segment 索引，用于定位
+    snippet = Column(String(500), nullable=True)  # 摘要，用于列表展示
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 关系
+    book = relationship("Book", back_populates="bookmarks")

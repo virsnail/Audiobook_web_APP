@@ -17,8 +17,16 @@ from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User
-from app.models.book import Book, BookShare, ReadingProgress
-from app.schemas.book import BookResponse, BookListResponse, BookProgressUpdate, BookProgressResponse
+from app.models.book import Book, BookShare, ReadingProgress, Bookmark
+from app.schemas.book import (
+    BookResponse,
+    BookListResponse,
+    BookProgressUpdate,
+    BookProgressResponse,
+    BookUpdate,
+    BookmarkCreate,
+    BookmarkResponse,
+)
 from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query, get_current_user_optional_token_or_query
 from app.config import settings
 from app.utils import epub_utils  # 方案2: EPUB processing
@@ -787,6 +795,61 @@ async def get_book(
                 detail="无权访问此书籍"
             )
     
+    return book
+
+
+async def _ensure_book_access(
+    db: AsyncSession, book_id: uuid.UUID, current_user: User
+) -> Book:
+    """确保当前用户有权限访问该书，返回 Book 或 404/403"""
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在",
+        )
+    if book.owner_id == current_user.id:
+        return book
+    if book.is_public:
+        return book
+    share_result = await db.execute(
+        select(BookShare).where(
+            BookShare.book_id == book_id,
+            BookShare.shared_to == current_user.id,
+        )
+    )
+    if share_result.scalar_one_or_none():
+        return book
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="无权访问此书籍",
+    )
+
+
+@router.patch("/{book_id}", response_model=BookResponse, summary="修改书籍信息（仅所有者）")
+async def update_book(
+    book_id: uuid.UUID,
+    body: BookUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改书名等（仅书籍所有者）"""
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书籍不存在",
+        )
+    if book.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有所有者可以修改书籍",
+        )
+    book.title = body.title
+    await db.commit()
+    await db.refresh(book)
     return book
 
 
@@ -1647,3 +1710,81 @@ async def get_book_cover(
         )
     
     return FileResponse(cover_full_path)
+
+
+# ============= 书签 API（每用户每本书） =============
+
+
+@router.get("/{book_id}/bookmarks", response_model=List[BookmarkResponse], summary="获取本书书签列表")
+async def list_bookmarks(
+    book_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取当前用户在该书中的书签（仅本人可见）"""
+    await _ensure_book_access(db, book_id, current_user)
+    result = await db.execute(
+        select(Bookmark)
+        .where(Bookmark.book_id == book_id, Bookmark.user_id == current_user.id)
+        .order_by(Bookmark.segment_index.asc(), Bookmark.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+@router.post("/{book_id}/bookmarks", response_model=BookmarkResponse, status_code=status.HTTP_201_CREATED, summary="添加书签")
+async def create_bookmark(
+    book_id: uuid.UUID,
+    body: BookmarkCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """在指定段落添加书签（需有书籍访问权限）"""
+    await _ensure_book_access(db, book_id, current_user)
+    # 可选：同一段落不重复添加
+    existing = await db.execute(
+        select(Bookmark).where(
+            Bookmark.book_id == book_id,
+            Bookmark.user_id == current_user.id,
+            Bookmark.segment_index == body.segment_index,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该段落已有书签",
+        )
+    bookmark = Bookmark(
+        user_id=current_user.id,
+        book_id=book_id,
+        segment_index=body.segment_index,
+        snippet=(body.snippet or "")[:500],
+    )
+    db.add(bookmark)
+    await db.commit()
+    await db.refresh(bookmark)
+    return bookmark
+
+
+@router.delete("/{book_id}/bookmarks/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除书签")
+async def delete_bookmark(
+    book_id: uuid.UUID,
+    bookmark_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除书签（仅本人）"""
+    result = await db.execute(
+        select(Bookmark).where(
+            Bookmark.id == bookmark_id,
+            Bookmark.book_id == book_id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    bookmark = result.scalar_one_or_none()
+    if not bookmark:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="书签不存在",
+        )
+    await db.delete(bookmark)
+    await db.commit()
