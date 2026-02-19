@@ -703,6 +703,7 @@
     bind:this={audioPlayerRef}
     audioSrc={currentAudioSrc}
     {currentChapterIndex}
+    bind:isPlaying
     bind:autoScroll
     onTimeUpdate={handleTimeUpdate}
     onChapterEnd={handleChapterEnd}
