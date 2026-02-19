@@ -17,6 +17,7 @@
     audioSrc: string;
     currentChapterIndex?: number; // 当前章节索引
     isPlaying?: boolean; // 播放状态（双向绑定）
+    autoScroll?: boolean; // 是否自动滚动（双向绑定）
     onTimeUpdate?: (time: number, globalTime: number) => void;
     onChapterEnd?: () => void;
     onSeekGlobal?: (globalTime: number) => void;
@@ -27,6 +28,7 @@
     audioSrc,
     currentChapterIndex = 0,
     isPlaying = $bindable(false),
+    autoScroll = $bindable(false),
     onTimeUpdate,
     onChapterEnd,
     onSeekGlobal,
@@ -496,11 +498,24 @@
 
   <!-- 控制按钮 -->
   <div class="controls">
-    <!-- 左侧：当前时间 -->
-    <div class="time-display">
-      <span class="time-current">{formatTime(currentTime)}</span>
-      <span class="time-separator">/</span>
-      <span class="time-duration">{formatTime(duration)}</span>
+    <!-- 左侧：当前时间 + 自动滚动开关 -->
+    <div class="left-controls">
+      <div class="time-display">
+        <span class="time-current">{formatTime(currentTime)}</span>
+        <span class="time-separator">/</span>
+        <span class="time-duration">{formatTime(duration)}</span>
+      </div>
+      <button
+        class="auto-scroll-btn"
+        class:on={autoScroll}
+        onclick={() => (autoScroll = !autoScroll)}
+        title="{autoScroll ? '关闭自动滚动 Off' : '自动滚动 On'} 自动滚动 Auto-scroll"
+      >
+        <span class="auto-scroll-track">
+          <span class="auto-scroll-thumb"></span>
+        </span>
+        <span class="auto-scroll-label">自动滚动 Auto</span>
+      </button>
     </div>
 
     <!-- 中间控制区 -->
@@ -651,6 +666,12 @@
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
 
+  :global(.dark) .player-container {
+    background: #111827;
+    border-top-color: #374151;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  }
+
   .progress-bar {
     height: 6px;
     background: #e5e7eb;
@@ -710,6 +731,107 @@
 
   .time-duration {
     color: #9ca3af;
+  }
+
+  :global(.dark) .time-current {
+    color: #e5e7eb;
+  }
+  :global(.dark) .time-display {
+    color: #9ca3af;
+  }
+  :global(.dark) .time-duration {
+    color: #6b7280;
+  }
+
+  .left-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .auto-scroll-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 9999px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 11px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    touch-action: manipulation;
+  }
+
+  .auto-scroll-btn:hover {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .auto-scroll-btn.on {
+    background: #dbeafe;
+    color: #2563eb;
+  }
+
+  .auto-scroll-btn.on:hover {
+    background: #bfdbfe;
+  }
+
+  :global(.dark) .auto-scroll-btn {
+    background: #374151;
+    color: #9ca3af;
+  }
+
+  :global(.dark) .auto-scroll-btn:hover {
+    background: #4b5563;
+    color: #e5e7eb;
+  }
+
+  :global(.dark) .auto-scroll-btn.on {
+    background: #1e3a5f;
+    color: #93c5fd;
+  }
+
+  .auto-scroll-track {
+    width: 32px;
+    height: 18px;
+    border-radius: 9999px;
+    background: #e5e7eb;
+    position: relative;
+    display: block;
+  }
+
+  .auto-scroll-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease;
+  }
+
+  .auto-scroll-btn.on .auto-scroll-track {
+    background: #2563eb;
+  }
+
+  .auto-scroll-btn.on .auto-scroll-thumb {
+    transform: translateX(14px);
+  }
+
+  :global(.dark) .auto-scroll-track {
+    background: #4b5563;
+  }
+
+  :global(.dark) .auto-scroll-btn.on .auto-scroll-track {
+    background: #2563eb;
+  }
+
+  .auto-scroll-label {
+    white-space: nowrap;
   }
 
   .control-buttons {

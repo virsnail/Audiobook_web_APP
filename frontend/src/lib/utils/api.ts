@@ -210,6 +210,14 @@ export async function getChapterAlignment(bookId: string, chapterId: string): Pr
   return request(`/books/${bookId}/chapters/${chapterId}/alignment`);
 }
 
+// 修改书籍（如书名，仅所有者）
+export async function updateBook(bookId: string, data: { title: string }): Promise<Book> {
+  return request(`/books/${bookId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 // 删除书籍
 export async function deleteBook(bookId: string): Promise<{ message: string }> {
   return request(`/books/${bookId}`, {
@@ -274,4 +282,37 @@ export async function saveProgress(
 // 获取阅读进度
 export async function getProgress(bookId: string): Promise<any> {
   return request(`/books/${bookId}/progress`);
+}
+
+// ============ 书签 API ============
+
+export interface BookmarkItem {
+  id: string;
+  book_id: string;
+  segment_index: number;
+  snippet: string | null;
+  created_at: string;
+}
+
+// 获取本书书签列表
+export async function getBookmarks(bookId: string): Promise<BookmarkItem[]> {
+  return request(`/books/${bookId}/bookmarks`);
+}
+
+// 添加书签
+export async function createBookmark(
+  bookId: string,
+  data: { segment_index: number; snippet?: string }
+): Promise<BookmarkItem> {
+  return request(`/books/${bookId}/bookmarks`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// 删除书签
+export async function deleteBookmark(bookId: string, bookmarkId: string): Promise<void> {
+  await request(`/books/${bookId}/bookmarks/${bookmarkId}`, {
+    method: 'DELETE',
+  });
 }
