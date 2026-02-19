@@ -599,14 +599,14 @@
     </a>
     -->
 
-      <!-- 全书进度 -->
+      <!-- 全书进度：固定宽度 + 导角细框，避免数字变化导致按钮抖动 -->
       <div
-        class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap min-w-[3em] text-right"
+        class="progress-badge"
       >
         {#if chaptersStore.totalDuration > 0}
-          {Math.floor((currentGlobalTime / chaptersStore.totalDuration) * 100)}%
+          {((currentGlobalTime / chaptersStore.totalDuration) * 100).toFixed(2)}%
         {:else}
-          0%
+          0.00%
         {/if}
       </div>
     </div>
@@ -645,6 +645,26 @@
   /* 触摸优化 */
   .touch-manipulation {
     touch-action: manipulation;
+  }
+
+  /* 阅读进度：固定宽度 + 导角超细方框，避免 6.21% → 99.21% 时按钮抖动 */
+  .progress-badge {
+    width: 5rem;
+    min-width: 5rem;
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--progress-color, #6b7280);
+    text-align: right;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--progress-border, #e5e7eb);
+    border-radius: 6px;
+    background: var(--progress-bg, transparent);
+    box-sizing: border-box;
+  }
+
+  :global(.dark) .progress-badge {
+    color: #9ca3af;
+    border-color: #4b5563;
   }
 
   /* 全局背景由 app.css body 控制，这里只移除旧的 override */
