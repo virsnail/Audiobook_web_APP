@@ -345,27 +345,50 @@
   let _highlightTimer: ReturnType<typeof setTimeout> | null = null;
   let _lastHighlightTime = 0;
 
+  /** 将当前高亮元素滚动到视口内（约 35% 处），自动滚动模式下使用瞬时滚动避免被取消 */
+  function scrollHighlightIntoView(el: HTMLElement) {
+    const rect = el.getBoundingClientRect();
+    const absoluteTop = window.scrollY + rect.top;
+    const targetScroll = absoluteTop - window.innerHeight * 0.35;
+    const clamped = Math.max(0, targetScroll);
+    window.scrollTo({
+      top: clamped,
+      behavior: autoScroll ? "auto" : "smooth",
+    });
+  }
+
+  /** 当前高亮是否在“舒适可见”区域内（约视口 15%～85%），用于自动滚动时判断是否需要跟滚 */
+  function isHighlightInComfortZone(el: HTMLElement): boolean {
+    const rect = el.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const top = rect.top;
+    const bottom = rect.bottom;
+    return top >= vh * 0.15 && bottom <= vh * 0.85;
+  }
+
+  /** 获取 segment 所属的“段落/块”（同一 <p> 或同一 .code-block），用于仅在新段落首次高亮时滚动 */
+  function getSegmentBlock(el: HTMLElement): Element | null {
+    return el.closest("p") || el.closest(".code-block") || el.parentElement;
+  }
+
   function updateHighlight() {
     if (!containerRef) return;
 
-    // 节流：两次调用间隔不得小于 HIGHLIGHT_THROTTLE_MS
+    const throttleMs = autoScroll && isPlaying ? 80 : SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS;
     const now = performance.now();
-    if (now - _lastHighlightTime < SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS) {
-      // 延迟执行，确保最新一次更新不丢失
+    if (now - _lastHighlightTime < throttleMs) {
       if (_highlightTimer) clearTimeout(_highlightTimer);
-      _highlightTimer = setTimeout(updateHighlight, SAFETY_LIMITS.HIGHLIGHT_THROTTLE_MS);
+      _highlightTimer = setTimeout(updateHighlight, throttleMs);
       return;
     }
     _lastHighlightTime = now;
     _highlightTimer = null;
 
-    // 移除旧高亮
-    const oldHighlight = containerRef.querySelector(".segment.active");
+    const oldHighlight = containerRef.querySelector(".segment.active") as HTMLElement | null;
     if (oldHighlight) {
       oldHighlight.classList.remove("active");
     }
 
-    // 找到当前时间对应的 segment
     const { chapterIndex, chapterTime } =
       chaptersStore.globalToChapterTime(currentGlobalTime);
     const chapter = chaptersStore.chapters[chapterIndex];
@@ -382,18 +405,20 @@
       const newHighlight = containerRef.querySelector(
         `[data-global-id="${currentSeg.globalId}"]`,
       ) as HTMLElement | null;
-      if (newHighlight !== oldHighlight) {
-        oldHighlight?.classList.remove("active");
-        newHighlight?.classList.add("active");
 
-        if (autoScroll && isPlaying && newHighlight) {
-          const rect = newHighlight.getBoundingClientRect();
-          const absoluteTop = window.scrollY + rect.top;
-          const targetScroll = absoluteTop - window.innerHeight * 0.35;
-          window.scrollTo({
-            top: Math.max(0, targetScroll),
-            behavior: "smooth",
-          });
+      if (newHighlight) {
+        if (newHighlight !== oldHighlight) {
+          oldHighlight?.classList.remove("active");
+          newHighlight.classList.add("active");
+        }
+
+        if (autoScroll && isPlaying) {
+          const newBlock = getSegmentBlock(newHighlight);
+          const oldBlock = oldHighlight ? getSegmentBlock(oldHighlight) : null;
+          const isNewBlock = newBlock !== oldBlock;
+          if (isNewBlock && !isHighlightInComfortZone(newHighlight)) {
+            scrollHighlightIntoView(newHighlight);
+          }
         }
       }
     }
