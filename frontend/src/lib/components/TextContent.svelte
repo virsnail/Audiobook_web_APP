@@ -329,8 +329,10 @@
     return formatWithCodeBlocks(result);
   }
 
-  // 处理章节可见性变化
+  // 处理章节可见性变化（驱动懒加载/卸载）
   function handleIntersection(entries: IntersectionObserverEntry[]) {
+    const visibleIndices: number[] = [];
+
     entries.forEach((entry) => {
       const chapterIndex = parseInt(
         (entry.target as HTMLElement).dataset.chapterIndex || "-1",
@@ -339,15 +341,20 @@
 
       const isVisible = entry.isIntersecting;
       chaptersStore.setChapterVisibility(chapterIndex, isVisible);
+    });
 
-      if (isVisible) {
-        // 章节可见
-        // Data is preloaded by loadAllBookData, so just track visibility
-      } else {
-        // 章节不可见
-        // No unloading needed for "load all" pattern
+    // 收集所有当前可见的章节索引
+    chaptersStore.chapters.forEach((_, idx) => {
+      const state = chaptersStore.chapterLoadStates.get(idx);
+      if (state?.isVisible) {
+        visibleIndices.push(idx);
       }
     });
+
+    // 更新加载窗口：加载附近章节，卸载远处章节
+    if (visibleIndices.length > 0) {
+      chaptersStore.updateLoadWindow(visibleIndices);
+    }
   }
 
   // 更新高亮（含节流保护）
@@ -525,8 +532,8 @@
     if (!observer) {
       observer = new IntersectionObserver(handleIntersection, {
         root: null,
-        rootMargin: "200px",
-        threshold: 0.1,
+        rootMargin: "600px", // 提前 600px 预加载，避免用户等待
+        threshold: 0.01,
       });
     }
 
@@ -623,10 +630,18 @@
       data-chapter-index={index}
       use:setupChapterObserver={index}
     >
-      <!-- 章节内容 -->
-      <div class="chapter-content">
-        {@html renderChapter(chapter)}
-      </div>
+      {#if chapter.textContent}
+        <!-- 章节内容（已加载） -->
+        <div class="chapter-content">
+          {@html renderChapter(chapter)}
+        </div>
+      {:else}
+        <!-- 章节占位符（未加载 / 加载中） -->
+        <div class="chapter-placeholder">
+          <div class="loading-spinner"></div>
+          <span>加载中... Loading chapter {index + 1}...</span>
+        </div>
+      {/if}
     </section>
   {/each}
 </div>
@@ -759,10 +774,32 @@
   }
 
   .chapter-placeholder {
-    padding: 40px 20px;
+    padding: 60px 20px;
     text-align: center;
-    color: var(--reader-muted);
+    color: var(--reader-muted, #6b7280);
     font-style: italic;
+    font-size: 0.9em;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .loading-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--reader-highlight-hover, #e5e7eb);
+    border-top-color: var(--reader-highlight, #3b82f6);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .reader-container :global(.segment) {
