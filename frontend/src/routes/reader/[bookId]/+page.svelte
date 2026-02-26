@@ -50,22 +50,29 @@
         console.log("📚 Initializing store from manifest...");
         chaptersStore.initFromManifest(manifest, basePath);
 
-        // 设置第一章数据
+        // 设置第一章数据（使用确定性 globalId: chapterIndex*100000 + localIdx）
         if (manifest.chapters.length > 0 && firstChapter) {
           chaptersStore.setChapterData(0, {
             textContent: firstChapter.textContent,
             segments: firstChapter.segments.map((seg, idx) => ({
               ...seg,
-              globalId: idx,
+              globalId: chaptersStore.computeGlobalId(0, idx),
               globalStart: seg.start,
               globalEnd: seg.end,
               chapterIndex: 0,
             })),
           });
+          // 标记第一章为已加载状态
+          const state = chaptersStore.chapterLoadStates.get(0);
+          if (state) {
+            state.dataLoaded = true;
+            state.textLoaded = true;
+            state.state = "loaded";
+          }
         }
 
-        // 启动全量加载
-        chaptersStore.loadAllBookData();
+        // 不再调用 loadAllBookData()——改为懒加载
+        // TextContent 的 IntersectionObserver 会按需加载可见章节
       });
     }
   });
@@ -108,7 +115,8 @@
   async function handleChapterEnd() {
     const nextIndex = currentChapterIndex + 1;
     if (nextIndex < chaptersStore.chapters.length) {
-      // 数据已由 loadAllBookData 加载，无需手动 load
+      // 懒加载模式：确保下一章的文本+对齐数据已加载
+      await chaptersStore.ensureChaptersLoaded([nextIndex]);
 
       // 切换章节索引，currentAudioSrc 会自动更新
       currentChapterIndex = nextIndex;
@@ -116,8 +124,7 @@
       // 等待 DOM 更新
       await tick();
 
-      // 关键修复：从 0 秒开始播放下一章节
-      // loadAndPlay 只接受一个参数 time，不是 (chapterIndex, time)
+      // 从 0 秒开始播放下一章节
       audioPlayerRef?.loadAndPlay(0);
     }
   }

@@ -10,7 +10,7 @@
   - 时间更新传递给父组件
 -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { authStore } from "$lib/stores/auth.svelte.ts";
 
   interface Props {
@@ -50,6 +50,20 @@
 
   const PLAYBACK_SPEEDS = [3, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1.0, 0.7];
 
+  // ========== 睡眠定时器 ==========
+  // 预设时间选项（分钟）
+  const SLEEP_TIMER_OPTIONS = [0, 15, 30, 45, 60, 90];
+  // 当前选择的定时分钟数（0 = 关闭）
+  let sleepTimerMinutes = $state(0);
+  // 定时器到期的绝对时间戳（Date.now() + minutes*60000）
+  let sleepTimerEndTime = $state(0);
+  // 定时器剩余分钟数（用于UI显示）
+  let sleepTimerRemaining = $state(0);
+  // 菜单显示状态
+  let showSleepMenu = $state(false);
+  // setInterval ID
+  let sleepCheckInterval: ReturnType<typeof setInterval> | null = null;
+
   onMount(() => {
     // 优先使用当前用户专属的配置
     let savedSpeed = null;
@@ -67,7 +81,64 @@
     if (savedSpeed) {
       playbackSpeed = parseFloat(savedSpeed);
     }
+
+    // 启动睡眠定时器检查间隔（每 60 秒检查一次系统时间）
+    sleepCheckInterval = setInterval(checkSleepTimer, 60_000);
   });
+
+  onDestroy(() => {
+    if (sleepCheckInterval) {
+      clearInterval(sleepCheckInterval);
+      sleepCheckInterval = null;
+    }
+  });
+
+  /**
+   * 设置睡眠定时器
+   * @param minutes 分钟数，0 表示关闭
+   */
+  function setSleepTimer(minutes: number) {
+    sleepTimerMinutes = minutes;
+    showSleepMenu = false;
+
+    if (minutes <= 0) {
+      // 关闭定时器
+      sleepTimerEndTime = 0;
+      sleepTimerRemaining = 0;
+      console.log("⏰ 睡眠定时器已关闭");
+    } else {
+      // 设置到期时间 = 当前时间 + N分钟
+      sleepTimerEndTime = Date.now() + minutes * 60_000;
+      sleepTimerRemaining = minutes;
+      console.log(
+        `⏰ 睡眠定时器: ${minutes} 分钟后自动暂停，到期时间: ${new Date(sleepTimerEndTime).toLocaleTimeString()}`,
+      );
+    }
+  }
+
+  /**
+   * 每分钟检查一次睡眠定时器（基于系统时间，无视倍速设置）
+   * 即使手机熄屏，setInterval 仍然会运行
+   */
+  function checkSleepTimer() {
+    if (sleepTimerEndTime <= 0) return;
+
+    const now = Date.now();
+    const remainMs = sleepTimerEndTime - now;
+
+    if (remainMs <= 0) {
+      // 定时器到期，暂停播放
+      console.log("⏰ 睡眠定时器到期，自动暂停播放");
+      audioElement?.pause();
+      // 重置定时器
+      sleepTimerMinutes = 0;
+      sleepTimerEndTime = 0;
+      sleepTimerRemaining = 0;
+    } else {
+      // 更新剩余分钟数
+      sleepTimerRemaining = Math.ceil(remainMs / 60_000);
+    }
+  }
 
   // 计算进度百分比
   let progress = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
@@ -509,7 +580,9 @@
         class="auto-scroll-btn"
         class:on={autoScroll}
         onclick={() => (autoScroll = !autoScroll)}
-        title="{autoScroll ? '关闭自动滚动 Off' : '自动滚动 On'} 自动滚动 Auto-scroll"
+        title="{autoScroll
+          ? '关闭自动滚动 Off'
+          : '自动滚动 On'} 自动滚动 Auto-scroll"
       >
         <span class="auto-scroll-track">
           <span class="auto-scroll-thumb"></span>
@@ -635,20 +708,51 @@
           {/each}
         </div>
       {/if}
+
+      <!-- 睡眠定时器按钮 -->
+      <button
+        class="speed-btn sleep-timer-btn"
+        class:active={sleepTimerMinutes > 0}
+        onclick={() => (showSleepMenu = !showSleepMenu)}
+        title="睡眠定时 Sleep Timer"
+      >
+        🌙 {sleepTimerMinutes > 0 ? `${sleepTimerRemaining}m` : "Off"}
+      </button>
+
+      {#if showSleepMenu}
+        <!-- 睡眠定时菜单 -->
+        <div class="speed-menu sleep-menu">
+          {#each SLEEP_TIMER_OPTIONS as mins}
+            <button
+              class="speed-option"
+              class:active={mins === sleepTimerMinutes}
+              onclick={() => setSleepTimer(mins)}
+            >
+              {mins === 0 ? "关闭 Off" : `${mins} 分钟 min`}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
   </div>
 </div>
 
-<!-- 点击外部关闭速度菜单 -->
-{#if showSpeedMenu}
+<!-- 点击外部关闭速度/睡眠菜单 -->
+{#if showSpeedMenu || showSleepMenu}
   <div
     class="overlay"
     role="button"
     tabindex="0"
-    aria-label="Close speed menu"
-    onclick={() => (showSpeedMenu = false)}
+    aria-label="Close menu"
+    onclick={() => {
+      showSpeedMenu = false;
+      showSleepMenu = false;
+    }}
     onkeydown={(e) => {
-      if (e.key === "Enter" || e.key === " ") showSpeedMenu = false;
+      if (e.key === "Enter" || e.key === " ") {
+        showSpeedMenu = false;
+        showSleepMenu = false;
+      }
     }}
   ></div>
 {/if}
@@ -904,7 +1008,29 @@
     position: relative;
     min-width: 50px;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  /* 睡眠定时器按钮激活状态 */
+  .sleep-timer-btn.active {
+    background: #eef2ff;
+    color: #4f46e5;
+  }
+  .sleep-timer-btn.active:hover {
+    background: #e0e7ff;
+  }
+  :global(.dark) .sleep-timer-btn.active {
+    background: #312e81;
+    color: #a5b4fc;
+  }
+
+  /* 睡眠菜单定位 */
+  .sleep-menu {
+    right: 0;
+    min-width: 120px;
   }
 
   .speed-btn {
