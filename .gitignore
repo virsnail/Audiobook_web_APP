@@ -159,3 +159,4 @@ backups/
 # ~/.cache/huggingface/
 
 docs/CLOUD_DEPLOYMENT.md
+calibre-web/

@@ -32,6 +32,16 @@ Unlike standard players, this application specializes in **synchronized reading*
   - **进度追踪**：自动记住每本书的播放位置。
 - **User Management**: Multi-user support with an invitation code system to control registration.
   - **用户管理**：支持多用户，配备邀请码系统以控制注册。
+- **Advanced Library Management**:
+  - **Tagging System**: Organize books with custom user-scoped tags.
+  - **Flexible Sorting**: Sort your library by title, creation date, or book duration.
+  - **Tag Filtering**: Quickly find books using the sidebar filtering system.
+  - **Sequential Playback (PlayAll)**: Play all visible books in the current filtered/sorted list sequentially with automatic transitions.
+- **高级书架管理**:
+  - **标签系统**: 使用自定义用户级标签组织书籍。
+  - **灵活排序**: 按标题、创建日期或书籍时长对书库进行排序。
+  - **标签过滤**: 使用侧边栏过滤系统快速查找书籍。
+  - **列表播放 (PlayAll)**: 按顺序连续播放当前过滤/排序列表中的所有书籍，支持自动切换。
 - **Responsive Design**: Built with SvelteKit for a fast, fluid UI on desktop and mobile.
   - **响应式设计**：基于 SvelteKit 构建，在桌面和移动端提供快速、流畅的用户界面。
 

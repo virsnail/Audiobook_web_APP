@@ -16,6 +16,7 @@ from app.database import Base
 
 # 导入所有模型（确保它们被注册到 Base.metadata）
 from app.models import user, book
+from app.models import tag  # 标签模型
 
 # 导入配置（获取数据库 URL）
 from app.config import settings

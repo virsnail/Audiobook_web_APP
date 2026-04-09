@@ -14,6 +14,6 @@
   </div>
 
   <footer class="py-6 text-center text-gray-400 text-sm">
-    <p>AudioBook App v2.1</p>
+    <p>AudioBook App v2.6</p>
   </footer>
 </div>
