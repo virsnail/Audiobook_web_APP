@@ -89,6 +89,7 @@
   let tagEditBookTitle = $state("");
   let tagEditSelectedIds = $state<Set<string>>(new Set());
   let tagEditNewName = $state("");
+  let tagEditSearchQuery = $state(""); // 对话框内标签搜索
 
   // 初始化
   onMount(async () => {
@@ -238,9 +239,12 @@
     editingTagName = "";
   }
 
-  // 删除标签
-  async function handleDeleteTag(tagId: string) {
-    if (!confirm("确定要删除此标签吗？Delete this tag?")) return;
+  // 删除标签（需要二次确认）
+  async function handleDeleteTag(tagId: string, tagName: string) {
+    const firstConfirm = confirm(`确定要删除标签「${tagName}」吗？\nDelete tag "${tagName}"?`);
+    if (!firstConfirm) return;
+    const secondConfirm = confirm(`⚠️ 再次确认：删除标签「${tagName}」将从所有书籍中移除此标签。\n此操作不可撤销！\n\nConfirm: Delete tag "${tagName}"?`);
+    if (!secondConfirm) return;
     try {
       await deleteTag(tagId);
       selectedTagIds.delete(tagId);
@@ -257,6 +261,7 @@
     tagEditBookTitle = book.title;
     tagEditSelectedIds = new Set((book.tags || []).map(t => t.id));
     tagEditNewName = "";
+    tagEditSearchQuery = ""; // 每次打开时清空搜索词
     showTagEditDialog = true;
   }
 
@@ -722,16 +727,45 @@
               </svg>
               标签 Tags
             </h2>
-            <button
-              class="p-1 text-gray-400 hover:text-gray-600 rounded"
-              onclick={() => sidebarCollapsed = true}
-              title="收起 Collapse"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            <div class="flex items-center gap-1">
+              <!-- 新建标签按钮（+号，移到这里） -->
+              {#if showTagInput}
+                <div class="flex gap-1">
+                  <input
+                    type="text"
+                    bind:value={newTagName}
+                    placeholder="标签名"
+                    class="w-20 px-1.5 py-0.5 text-xs border border-blue-300 rounded focus:ring-1 focus:ring-blue-400"
+                    onkeydown={(e) => { if (e.key === 'Enter') handleCreateTag(); if (e.key === 'Escape') { showTagInput = false; newTagName = ''; } }}
+                  />
+                  <button
+                    onclick={handleCreateTag}
+                    class="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                  >✓</button>
+                </div>
+              {:else}
+                <button
+                  onclick={() => showTagInput = true}
+                  class="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                  title="新建标签 New Tag"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              {/if}
+              <!-- 收起按钮 -->
+              <button
+                class="p-1 text-gray-400 hover:text-gray-600 rounded"
+                onclick={() => sidebarCollapsed = true}
+                title="收起 Collapse"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- 搜索标签 -->
@@ -795,7 +829,7 @@
                     <div class="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
                       <button
                         onclick={() => startEditTag(tag)}
-                        class="p-0.5 text-gray-300 hover:text-amber-500 rounded"
+                        class="p-1 text-gray-400 hover:text-amber-500 rounded"
                         title="修改 Edit"
                       >
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -804,8 +838,8 @@
                         </svg>
                       </button>
                       <button
-                        onclick={() => handleDeleteTag(tag.id)}
-                        class="p-0.5 text-gray-300 hover:text-red-500 rounded"
+                        onclick={() => handleDeleteTag(tag.id, tag.name)}
+                        class="p-1 text-gray-400 hover:text-red-500 rounded"
                         title="删除 Delete"
                       >
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -818,38 +852,9 @@
                 {/if}
               </div>
             {/each}
+          <!-- 标签列表结束，底部无需新建按钮 -->
           </div>
 
-          <!-- 新建标签 -->
-          <div class="px-3 py-2 border-t border-gray-100">
-            {#if showTagInput}
-              <div class="flex gap-1">
-                <input
-                  type="text"
-                  bind:value={newTagName}
-                  placeholder="标签名 Tag name"
-                  class="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-400"
-                  onkeydown={(e) => { if (e.key === 'Enter') handleCreateTag(); if (e.key === 'Escape') { showTagInput = false; newTagName = ''; } }}
-                />
-                <button
-                  onclick={handleCreateTag}
-                  class="px-2 py-1 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600"
-                >
-                  添加
-                </button>
-              </div>
-            {:else}
-              <button
-                onclick={() => showTagInput = true}
-                class="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                新建标签 New Tag
-              </button>
-            {/if}
-          </div>
         {/if}
       </aside>
 
@@ -947,7 +952,7 @@
                   </p>
 
                   <!-- 操作按钮 -->
-                  <div class="mt-3 flex items-center justify-between">
+                  <div class="mt-3 flex items-start justify-between gap-2 flex-wrap">
                     <div class="flex items-center gap-2">
                       <button
                         onclick={(e) => handleBookClick(book, e)}
@@ -976,80 +981,56 @@
                       {/if}
                     </div>
 
-                    <!-- 修改书名、编辑标签、分享、删除：仅对自己的书显示 -->
+                    <!-- 操作按钮区域 - 始终可见，hover 时高亮 -->
                     {#if book.owner_id === authStore.user?.id}
-                      <div class="flex items-center gap-1">
+                      <div class="flex items-center gap-1.5">
                         <!-- 编辑标签 -->
                         <button
                           onclick={() => openTagEditDialog(book)}
-                          class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          class="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200 hover:border-blue-200"
                           title="编辑标签 Edit Tags"
                         >
-                          <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                           </svg>
+                          <span class="hidden sm:inline">标签</span>
                         </button>
                         <!-- 修改书名 -->
                         <button
                           onclick={() => openEditTitleDialog(book)}
-                          class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          class="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors border border-gray-200 hover:border-amber-200"
                           title="修改书名 Edit Title"
                         >
-                          <svg
-                            class="w-4.5 h-4.5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                            />
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                           </svg>
+                          <span class="hidden sm:inline">改名</span>
                         </button>
                         <!-- 分享按钮 -->
                         <button
                           onclick={() => openShareDialog(book.id)}
-                          class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                          class="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200 hover:border-blue-200"
                           title="分享 Share"
                         >
-                          <svg
-                            class="w-4.5 h-4.5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                            />
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                           </svg>
+                          <span class="hidden sm:inline">分享</span>
                         </button>
-
                         <!-- 删除按钮 -->
                         <button
                           onclick={() => handleDelete(book.id)}
-                          class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          class="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-gray-200 hover:border-red-200"
                           title="删除 Delete"
                         >
-                          <svg
-                            class="w-4.5 h-4.5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
+                          <span class="hidden sm:inline">删除</span>
                         </button>
                       </div>
                     {/if}
@@ -1247,9 +1228,32 @@
         {tagEditBookTitle}
       </p>
 
+      <!-- 搜索框 -->
+      <div class="relative mb-2">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          bind:value={tagEditSearchQuery}
+          placeholder="搜索标签 Search tags..."
+          class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-gray-50"
+        />
+        {#if tagEditSearchQuery}
+          <button
+            onclick={() => tagEditSearchQuery = ""}
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        {/if}
+      </div>
+
       <!-- 标签列表 (多选) -->
-      <div class="max-h-60 overflow-y-auto border border-gray-100 rounded-xl p-2 mb-3 space-y-1">
-        {#each tags.filter(t => t.owner_id === authStore.user?.id) as tag}
+      <div class="max-h-52 overflow-y-auto border border-gray-100 rounded-xl p-2 mb-3 space-y-0.5">
+        {#each tags.filter(t => t.owner_id === authStore.user?.id && (!tagEditSearchQuery || t.name.toLowerCase().includes(tagEditSearchQuery.toLowerCase()))) as tag}
           <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer text-sm">
             <input
               type="checkbox"
@@ -1257,12 +1261,22 @@
               onchange={() => toggleBookTag(tag.id)}
               class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
             />
-            <span>{tag.name}</span>
+            <!-- 高亮匹配的搜索词 -->
+            {#if tagEditSearchQuery}
+              {@const lower = tag.name.toLowerCase()}
+              {@const idx = lower.indexOf(tagEditSearchQuery.toLowerCase())}
+              {@const before = tag.name.slice(0, idx)}
+              {@const match = tag.name.slice(idx, idx + tagEditSearchQuery.length)}
+              {@const after = tag.name.slice(idx + tagEditSearchQuery.length)}
+              <span>{before}<mark class="bg-yellow-100 text-yellow-800 rounded px-0.5">{match}</mark>{after}</span>
+            {:else}
+              <span>{tag.name}</span>
+            {/if}
             <span class="text-xs text-gray-400 ml-auto">{tag.book_count}</span>
           </label>
         {:else}
           <p class="text-sm text-gray-400 px-2 py-3 text-center">
-            暂无标签，请先创建 No tags yet
+            {tagEditSearchQuery ? `没有匹配「${tagEditSearchQuery}」的标签 No matching tags` : '暂无标签，请先创建 No tags yet'}
           </p>
         {/each}
       </div>
