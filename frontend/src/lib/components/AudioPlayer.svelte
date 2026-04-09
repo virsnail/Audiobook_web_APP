@@ -1006,6 +1006,11 @@
       display: none;
     }
 
+    /* 手机上隐藏「快进/快退15秒」文字，仅保留图标 */
+    .control-btn .btn-label {
+      display: none;
+    }
+
     /* 跟到朗读处按钮手机上紧凑内边距 */
     .speed-container .speed-btn:first-child {
       padding-left: 8px;
