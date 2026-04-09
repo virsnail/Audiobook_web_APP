@@ -133,6 +133,12 @@ export async function logActivity(action: string, details?: Record<string, any>)
 
 // ============ 书籍 API ============
 
+export interface BookTagInfo {
+  id: string;
+  name: string;
+  owner_id: string;
+}
+
 export interface Book {
   id: string;
   owner_id: string;
@@ -148,6 +154,7 @@ export interface Book {
   processing_status?: string; // "ready" | "processing" | "failed"
   processing_error?: string;
   created_at: string;
+  tags: BookTagInfo[];
 }
 
 export interface BookListResponse {
@@ -165,9 +172,20 @@ export interface BookManifest {
   totalDuration: number;
 }
 
-// 获取书籍列表
-export async function getBooks(): Promise<BookListResponse> {
-  return request('/books');
+// 获取书籍列表（支持标签筛选和排序）
+export async function getBooks(options?: {
+  tag_ids?: string[];
+  sort_by?: string;
+}): Promise<BookListResponse> {
+  const params = new URLSearchParams();
+  if (options?.tag_ids && options.tag_ids.length > 0) {
+    params.set('tag_ids', options.tag_ids.join(','));
+  }
+  if (options?.sort_by) {
+    params.set('sort_by', options.sort_by);
+  }
+  const qs = params.toString();
+  return request(`/books${qs ? '?' + qs : ''}`);
 }
 
 // 上传书籍
@@ -315,4 +333,60 @@ export async function deleteBookmark(bookId: string, bookmarkId: string): Promis
   await request(`/books/${bookId}/bookmarks/${bookmarkId}`, {
     method: 'DELETE',
   });
+}
+
+// ============ 标签 API ============
+
+export interface Tag {
+  id: string;
+  name: string;
+  owner_id: string;
+  book_count: number;
+  created_at: string;
+}
+
+// 获取当前用户的所有标签
+export async function getTags(): Promise<Tag[]> {
+  return request('/tags');
+}
+
+// 创建新标签
+export async function createTag(name: string): Promise<Tag> {
+  return request('/tags', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+// 修改标签名称
+export async function updateTag(tagId: string, name: string): Promise<Tag> {
+  return request(`/tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+// 删除标签
+export async function deleteTag(tagId: string): Promise<void> {
+  await request(`/tags/${tagId}`, {
+    method: 'DELETE',
+  });
+}
+
+// 搜索标签
+export async function searchTags(query: string): Promise<Tag[]> {
+  return request(`/tags/search?q=${encodeURIComponent(query)}`);
+}
+
+// 更新书籍的标签（全量替换）
+export async function updateBookTags(bookId: string, tagIds: string[]): Promise<Tag[]> {
+  return request(`/books/${bookId}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tag_ids: tagIds }),
+  });
+}
+
+// 获取书籍的标签
+export async function getBookTags(bookId: string): Promise<Tag[]> {
+  return request(`/books/${bookId}/tags`);
 }

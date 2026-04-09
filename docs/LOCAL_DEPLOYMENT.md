@@ -1,7 +1,7 @@
 # AudioBook Reader - macOS 本地开发部署手册
 
 > **适用环境**: macOS (Apple Silicon M1/M2/M3)  
-> **最后更新**: 2026-01-30
+> **最后更新**: 2026-04-09
 
 ---
 
@@ -532,6 +532,39 @@ export MEDIA_PATH=../media  # 确保路径正确
 python scripts/manage_users.py list
 ```
 
+python scripts/manage_users.py list
+```
+
+---
+
+## 12. 更新应用
+
+当你从 GitHub 获取了最新代码后，请执行以下步骤以应用更新（特别是标签系统）：
+
+1. **拉取代码**:
+   ```bash
+   git pull
+   ```
+
+2. **重新构建并启动**:
+   ```bash
+   # 生产模式
+   docker compose up -d --build
+   # 或 开发模式
+   docker compose -f docker-compose.dev.yml up -d --build
+   ```
+
+3. **执行数据库迁移 (关键)**:
+   ```bash
+   # 使用 Makefile 快捷命令
+   make migrate
+   # 或者手动执行
+   docker compose exec backend alembic upgrade head
+   ```
+
+4. **确认版本**:
+   打开网页，底部应显示 **v2.6**。
+
 ---
 
 ## 附录: 项目目录结构
@@ -554,11 +587,18 @@ Audiobook_web_APP/
 ├── backend/ # FastAPI 后端
 │ ├── .venv/ # 后端虚拟环境
 │ ├── app/
+│ │ ├── models/ # 数据模型 (新增 tag.py)
+│ │ ├── schemas/ # 数据验证 (新增 tag.py)
+│ │ └── routers/ # 路由 (新增 tags.py)
 │ └── requirements.txt
 │
 ├── frontend/ # SvelteKit 前端
-│ ├── node_modules/
 │ ├── src/
+│ │ ├── lib/
+│ │ │ ├── components/ # 组件 (新增 PlaylistBar.svelte)
+│ │ │ ├── stores/ # 状态 (新增 playlistStore.svelte.ts)
+│ │ │ └── utils/ # 工具 (更新 api.ts)
+│ │ └── routes/
 │ └── package.json
 │
 ├── nginx/ # Nginx 配置

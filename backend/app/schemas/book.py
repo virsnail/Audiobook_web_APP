@@ -19,6 +19,13 @@ class BookUpdate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
 
 
+class BookTagInfo(BaseModel):
+    """书籍标签简要信息（嵌套在 BookResponse 中）"""
+    id: UUID
+    name: str
+    owner_id: UUID
+
+
 class BookResponse(BookBase):
     id: UUID
     owner_id: UUID
@@ -31,6 +38,7 @@ class BookResponse(BookBase):
     epub_structure: Optional[Json] = None
     processing_status: Optional[str] = "ready"
     processing_error: Optional[str] = None
+    tags: List[BookTagInfo] = []
     
     class Config:
         from_attributes = True

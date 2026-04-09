@@ -11,13 +11,14 @@ from mutagen.mp3 import MP3
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request, BackgroundTasks, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, delete
+from sqlalchemy import select, or_, delete, func
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User
 from app.models.book import Book, BookShare, ReadingProgress, Bookmark
+from app.models.tag import Tag, BookTag
 from app.schemas.book import (
     BookResponse,
     BookListResponse,
@@ -26,7 +27,9 @@ from app.schemas.book import (
     BookUpdate,
     BookmarkCreate,
     BookmarkResponse,
+    BookTagInfo,
 )
+from app.schemas.tag import TagResponse, BookTagsUpdate
 from app.utils.deps import get_current_user, get_current_user_optional, get_current_user_token_or_query, get_current_user_optional_token_or_query
 from app.config import settings
 from app.utils import epub_utils  # 方案2: EPUB processing
@@ -281,12 +284,54 @@ def process_book_zip(zip_path: str, output_dir: str) -> dict:
     return manifest
 
 
+async def _get_book_tags(db: AsyncSession, book_ids: List[uuid.UUID]) -> dict:
+    """批量获取书籍的标签信息，返回 {book_id: [BookTagInfo, ...]}"""
+    if not book_ids:
+        return {}
+    result = await db.execute(
+        select(BookTag.book_id, Tag)
+        .join(Tag, BookTag.tag_id == Tag.id)
+        .where(BookTag.book_id.in_(book_ids))
+        .order_by(Tag.name)
+    )
+    rows = result.all()
+    tags_map: dict = {}
+    for book_id, tag in rows:
+        if book_id not in tags_map:
+            tags_map[book_id] = []
+        tags_map[book_id].append(BookTagInfo(id=tag.id, name=tag.name, owner_id=tag.owner_id))
+    return tags_map
+
+
+def _book_to_response(book: Book, tags: list) -> BookResponse:
+    """将 Book ORM 对象转换为 BookResponse，附带标签信息"""
+    return BookResponse(
+        id=book.id,
+        owner_id=book.owner_id,
+        title=book.title,
+        author=book.author,
+        description=book.description,
+        cover_path=book.cover_path,
+        total_duration=book.total_duration,
+        total_segments=book.total_segments,
+        is_public=book.is_public,
+        created_at=book.created_at,
+        book_type=book.book_type,
+        epub_structure=book.epub_structure,
+        processing_status=book.processing_status,
+        processing_error=book.processing_error,
+        tags=tags,
+    )
+
+
 @router.get("", response_model=BookListResponse, summary="获取书籍列表")
 async def get_books(
+    tag_ids: Optional[str] = Query(None, description="逗号分隔的标签 UUID，筛选包含任一标签的书"),
+    sort_by: Optional[str] = Query(None, description="排序方式: title_asc, title_desc, created_asc, created_desc, duration_asc, duration_desc"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取用户的书籍列表（包括自己的和被分享的）"""
+    """获取用户的书籍列表（包括自己的和被分享的），支持标签筛选和排序"""
     # 自己的书籍
     result = await db.execute(
         select(Book).where(Book.owner_id == current_user.id)
@@ -310,10 +355,52 @@ async def get_books(
     public_books = result.scalars().all()
     
     # 合并去重
-    all_books = {str(b.id): b for b in list(my_books) + list(shared_books) + list(public_books)}
-    books = list(all_books.values())
+    all_books_map = {str(b.id): b for b in list(my_books) + list(shared_books) + list(public_books)}
+    books = list(all_books_map.values())
     
-    return BookListResponse(books=books, total=len(books))
+    # 获取所有书的标签
+    book_uuids = [b.id for b in books]
+    tags_map = await _get_book_tags(db, book_uuids)
+    
+    # 按标签筛选
+    if tag_ids:
+        try:
+            filter_tag_uuids = {uuid.UUID(tid.strip()) for tid in tag_ids.split(",") if tid.strip()}
+        except ValueError:
+            raise HTTPException(status_code=400, detail="无效的标签 ID 格式")
+        
+        if filter_tag_uuids:
+            books = [
+                b for b in books
+                if any(
+                    t.id in filter_tag_uuids
+                    for t in tags_map.get(b.id, [])
+                )
+            ]
+    
+    # 排序
+    if sort_by:
+        import locale
+        sort_map = {
+            "title_asc": lambda b: (b.title or ""),
+            "title_desc": lambda b: (b.title or ""),
+            "created_asc": lambda b: (b.created_at or 0),
+            "created_desc": lambda b: (b.created_at or 0),
+            "duration_asc": lambda b: (b.total_duration or 0),
+            "duration_desc": lambda b: (b.total_duration or 0),
+        }
+        key_fn = sort_map.get(sort_by)
+        if key_fn:
+            reverse = sort_by.endswith("_desc")
+            books = sorted(books, key=key_fn, reverse=reverse)
+    
+    # 构建响应 (带标签)
+    book_responses = [
+        _book_to_response(b, tags_map.get(b.id, []))
+        for b in books
+    ]
+    
+    return BookListResponse(books=book_responses, total=len(book_responses))
 
 
 @router.post("", response_model=BookResponse, summary="上传新书籍（ZIP格式）")
@@ -795,7 +882,8 @@ async def get_book(
                 detail="无权访问此书籍"
             )
     
-    return book
+    tags_map = await _get_book_tags(db, [book.id])
+    return _book_to_response(book, tags_map.get(book.id, []))
 
 
 async def _ensure_book_access(
@@ -850,8 +938,86 @@ async def update_book(
     book.title = body.title
     await db.commit()
     await db.refresh(book)
-    return book
+    tags_map = await _get_book_tags(db, [book.id])
+    return _book_to_response(book, tags_map.get(book.id, []))
 
+
+# ============= 书籍标签管理 =============
+
+
+@router.get("/{book_id}/tags", response_model=List[TagResponse], summary="获取书籍的标签")
+async def get_book_tags(
+    book_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取书籍的标签列表（需有书籍访问权限）"""
+    await _ensure_book_access(db, book_id, current_user)
+
+    result = await db.execute(
+        select(Tag, func.count(BookTag.id).label("bc"))
+        .join(BookTag, Tag.id == BookTag.tag_id)
+        .where(BookTag.book_id == book_id)
+        .group_by(Tag.id)
+        .order_by(Tag.name)
+    )
+    rows = result.all()
+    return [
+        TagResponse(
+            id=tag.id,
+            name=tag.name,
+            owner_id=tag.owner_id,
+            book_count=bc,
+            created_at=tag.created_at,
+        )
+        for tag, bc in rows
+    ]
+
+
+@router.put("/{book_id}/tags", response_model=List[TagResponse], summary="设置书籍的标签")
+async def update_book_tags(
+    book_id: uuid.UUID,
+    body: BookTagsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    设置/更新书籍的标签（全量替换）。
+    仅书籍所有者可以操作。
+    tag_ids 中的标签必须属于当前用户。
+    """
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    if book.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只有所有者可以编辑书籍标签")
+
+    # 验证所有 tag_ids 属于当前用户
+    if body.tag_ids:
+        result = await db.execute(
+            select(Tag).where(Tag.id.in_(body.tag_ids), Tag.owner_id == current_user.id)
+        )
+        valid_tags = result.scalars().all()
+        valid_tag_ids = {t.id for t in valid_tags}
+        invalid = set(body.tag_ids) - valid_tag_ids
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"以下标签不存在或不属于你: {[str(i) for i in invalid]}"
+            )
+    
+    # 删除现有关联
+    await db.execute(delete(BookTag).where(BookTag.book_id == book_id))
+    
+    # 创建新关联
+    for tag_id in body.tag_ids:
+        db.add(BookTag(book_id=book_id, tag_id=tag_id))
+    
+    await db.commit()
+    
+    # 返回更新后的标签列表
+    return await get_book_tags(book_id, current_user, db)
 
 @router.get("/{book_id}/manifest", summary="获取书籍章节清单")
 async def get_manifest(

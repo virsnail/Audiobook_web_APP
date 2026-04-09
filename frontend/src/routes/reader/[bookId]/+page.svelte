@@ -10,14 +10,22 @@
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
+  import { goto } from "$app/navigation";
   import AudioPlayer from "$lib/components/AudioPlayer.svelte";
+  import PlaylistBar from "$lib/components/PlaylistBar.svelte";
   import TextContent from "$lib/components/TextContent.svelte";
   import { chaptersStore } from "$lib/stores/chapters.svelte";
+  import { playlistStore } from "$lib/stores/playlistStore.svelte.ts";
+  import { authStore } from "$lib/stores/auth.svelte.ts";
   import {
     logActivity,
     getBookmarks,
     createBookmark,
     deleteBookmark,
+    getBook,
+    getBookManifest,
+    getChapterText,
+    getChapterAlignment,
     type BookmarkItem,
   } from "$lib/utils/api";
   import type { BookManifest, Segment } from "$lib/types/chapter";
@@ -34,6 +42,7 @@
     bookTitle: string;
     processingStatus?: string;
     processingError?: string;
+    playlistBookIds?: string[];
   }
 
   let { data }: { data: PageData } = $props();
@@ -108,18 +117,124 @@
   async function handleChapterEnd() {
     const nextIndex = currentChapterIndex + 1;
     if (nextIndex < chaptersStore.chapters.length) {
-      // 数据已由 loadAllBookData 加载，无需手动 load
-
-      // 切换章节索引，currentAudioSrc 会自动更新
+      // 还有下一章，继续播放
       currentChapterIndex = nextIndex;
-
-      // 等待 DOM 更新
       await tick();
-
-      // 关键修复：从 0 秒开始播放下一章节
-      // loadAndPlay 只接受一个参数 time，不是 (chapterIndex, time)
       audioPlayerRef?.loadAndPlay(0);
+    } else if (playlistStore.isPlaylistMode && playlistStore.hasNext) {
+      // 当前书播完，自动切换播放列表中的下一本书
+      const nextBookId = playlistStore.nextBook();
+      if (nextBookId) {
+        await switchToBook(nextBookId);
+      }
     }
+  }
+
+  // 播放列表书籍标题映射
+  let playlistBookTitles = $state<Record<string, string>>({});
+
+  // 初始化播放列表
+  $effect(() => {
+    const ids = data?.playlistBookIds;
+    if (ids && ids.length > 1) {
+      untrack(() => {
+        playlistStore.setPlaylist(ids);
+        playlistStore.setCurrentByBookId(data.bookId);
+        // 加载所有书籍标题
+        loadPlaylistTitles(ids);
+      });
+    } else {
+      untrack(() => playlistStore.clearPlaylist());
+    }
+  });
+
+  async function loadPlaylistTitles(bookIds: string[]) {
+    const titles: Record<string, string> = {};
+    // 当前 book 的标题已知
+    titles[data.bookId] = data.bookTitle;
+    // 异步加载其他书的标题
+    for (const id of bookIds) {
+      if (id !== data.bookId) {
+        try {
+          const bookInfo = await getBook(id);
+          titles[id] = bookInfo.title || id;
+        } catch {
+          titles[id] = `Book ${id.substring(0, 8)}`;
+        }
+      }
+    }
+    playlistBookTitles = titles;
+  }
+
+  // 切换到指定书籍（播放列表模式）
+  let currentBookId = $state("");
+  let currentBookTitle = $state("");
+
+  $effect(() => {
+    currentBookId = data?.bookId || "";
+    currentBookTitle = data?.bookTitle || "";
+  });
+
+  async function switchToBook(bookId: string) {
+    try {
+      console.log("📚 Playlist: switching to book", bookId);
+
+      // 1. 加载新书信息
+      const bookInfo = await getBook(bookId);
+      currentBookId = bookId;
+      currentBookTitle = bookInfo.title || bookId;
+
+      // 2. 加载 manifest
+      const manifest = await getBookManifest(bookId);
+      const newBasePath = `/api/books/${bookId}`;
+
+      // 3. 加载第一章数据
+      const firstChapterId = manifest.chapters[0]?.id || 'ch001';
+      const [textContent, segments] = await Promise.all([
+        getChapterText(bookId, firstChapterId),
+        getChapterAlignment(bookId, firstChapterId),
+      ]);
+
+      // 4. 重新初始化 chaptersStore
+      chaptersStore.initFromManifest(manifest, newBasePath);
+      if (manifest.chapters.length > 0) {
+        chaptersStore.setChapterData(0, {
+          textContent,
+          segments: segments.map((seg: any, idx: number) => ({
+            ...seg,
+            globalId: idx,
+            globalStart: seg.start,
+            globalEnd: seg.end,
+            chapterIndex: 0,
+          })),
+        });
+      }
+      chaptersStore.loadAllBookData();
+
+      // 5. 重置播放状态
+      currentChapterIndex = 0;
+      currentGlobalTime = 0;
+
+      // 6. 更新 URL
+      const playlistParam = playlistStore.bookIds.join(',');
+      const newUrl = `/reader/${bookId}?playlist=${playlistParam}`;
+      window.history.replaceState({}, '', newUrl);
+
+      // 7. 加载书签
+      await loadBookmarks();
+
+      // 8. 等待 DOM 更新后开始播放
+      await tick();
+      audioPlayerRef?.loadAndPlay(0);
+
+    } catch (e) {
+      console.error("Failed to switch book:", e);
+    }
+  }
+
+  // 播放列表切换书籍回调
+  function handlePlaylistSwitchBook(bookId: string, index: number) {
+    switchToBook(bookId);
   }
 
   // 处理文字点击跳转
@@ -199,9 +314,8 @@
   });
 
   function setTheme(t: string) {
-    // 只有当主题真正改变时才记录日志 (避免初始化时重复记录)
     if (theme !== t && theme !== "") {
-      logActivity("CHANGE_THEME", { from: theme, to: t, book_id: data.bookId });
+      logActivity("CHANGE_THEME", { from: theme, to: t, book_id: currentBookId || data.bookId });
     }
     theme = t;
     localStorage.setItem("reader_theme", t);
@@ -220,7 +334,7 @@
       logActivity("CHANGE_FONT_SIZE", {
         from: fontSize,
         to: newSize,
-        book_id: data.bookId,
+        book_id: currentBookId || data.bookId,
       });
     }
 
@@ -278,7 +392,7 @@
   async function loadBookmarks() {
     bookmarksLoading = true;
     try {
-      bookmarks = await getBookmarks(data.bookId);
+      bookmarks = await getBookmarks(currentBookId || data.bookId);
     } catch {
       bookmarks = [];
     } finally {
@@ -295,7 +409,7 @@
     }
     try {
       const snippet = getCurrentSegmentSnippet();
-      await createBookmark(data.bookId, {
+      await createBookmark(currentBookId || data.bookId, {
         segment_index: globalId,
         snippet: snippet || undefined,
       });
@@ -323,7 +437,7 @@
 
   async function handleDeleteBookmark(b: BookmarkItem) {
     try {
-      await deleteBookmark(data.bookId, b.id);
+      await deleteBookmark(currentBookId || data.bookId, b.id);
       bookmarks = bookmarks.filter((x) => x.id !== b.id);
       bookmarkMessage = "已删除书签 Bookmark removed";
       setTimeout(() => (bookmarkMessage = ""), 2000);
@@ -335,7 +449,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.bookTitle || "阅读器"} - AudioBook</title>
+  <title>{currentBookTitle || data.bookTitle || "阅读器"} - AudioBook</title>
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
@@ -612,7 +726,7 @@
 
       <!-- 书名 -->
       <h1 class="text-lg font-medium truncate flex-1 leading-snug text-center">
-        {data.bookTitle || "未命名书籍 Untitled"}
+        {currentBookTitle || data.bookTitle || "未命名书籍 Untitled"}
       </h1>
 
       <!-- 主题切换 (进度左侧) -->
@@ -697,6 +811,14 @@
       onSeekTo={handleTextSeek}
     />
   </main>
+
+  <!-- 播放列表控制条 -->
+  {#if playlistStore.isPlaylistMode}
+    <PlaylistBar
+      bookTitles={playlistBookTitles}
+      onSwitchBook={handlePlaylistSwitchBook}
+    />
+  {/if}
 
   <!-- 音频播放器 -->
   <AudioPlayer

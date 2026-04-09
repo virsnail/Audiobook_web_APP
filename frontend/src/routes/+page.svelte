@@ -1,5 +1,5 @@
 <!--
-  首页 - 书架
+  首页 - 书架（含标签侧边栏 + 排序 + PlayAll）
 -->
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
@@ -16,13 +16,36 @@
     sendEmailCode,
     logout,
     logActivity,
+    getTags,
+    createTag,
+    updateTag,
+    deleteTag,
+    updateBookTags,
     type Book,
+    type Tag,
   } from "$lib/utils/api";
 
   // 书籍列表
   let books = $state<Book[]>([]);
   let isLoading = $state(true);
   let error = $state("");
+
+  // 标签
+  let tags = $state<Tag[]>([]);
+  let selectedTagIds = $state<Set<string>>(new Set());
+  let newTagName = $state("");
+  let tagSearchQuery = $state("");
+  let showTagInput = $state(false);
+  let editingTagId = $state("");
+  let editingTagName = $state("");
+
+  // 排序
+  let sortBy = $state("");
+
+  // 侧边栏
+  let sidebarWidth = $state(240);
+  let isResizing = $state(false);
+  let sidebarCollapsed = $state(false);
 
   // 分享对话框
   let showShareDialog = $state(false);
@@ -46,12 +69,12 @@
   // 修改密码状态
   let showPasswordDialog = $state(false);
   let newPassword = $state("");
-  let emailCode = $state(""); // [NEW] 邮箱验证码
+  let emailCode = $state("");
   let changePasswordLoading = $state(false);
   let changePasswordError = $state("");
-  let codeSent = $state(false); // [NEW] 验证码发送状态
-  let codeSending = $state(false); // [NEW] 验证码发送中
-  let countdown = $state(0); // [NEW] 倒计时
+  let codeSent = $state(false);
+  let codeSending = $state(false);
+  let countdown = $state(0);
 
   // 修改书名
   let showEditTitleDialog = $state(false);
@@ -60,12 +83,19 @@
   let editTitleLoading = $state(false);
   let editTitleError = $state("");
 
+  // 编辑标签对话框
+  let showTagEditDialog = $state(false);
+  let tagEditBookId = $state("");
+  let tagEditBookTitle = $state("");
+  let tagEditSelectedIds = $state<Set<string>>(new Set());
+  let tagEditNewName = $state("");
+
   // 初始化
   onMount(async () => {
     await init();
   });
 
-  // 组件销毁时清理定时器，防止内存泄漏
+  // 组件销毁时清理定时器
   onDestroy(() => {
     if (_countdownTimer) {
       clearInterval(_countdownTimer);
@@ -77,7 +107,7 @@
     isLoading = true;
     try {
       if (authStore.isLoggedIn) {
-        await loadBooks();
+        await Promise.all([loadBooks(), loadTags()]);
       }
     } catch (e) {
       console.error("Init failed", e);
@@ -89,12 +119,217 @@
   // 加载书籍
   async function loadBooks() {
     try {
-      const res = await getBooks();
+      const tagIdsArray = selectedTagIds.size > 0 ? [...selectedTagIds] : undefined;
+      const res = await getBooks({
+        tag_ids: tagIdsArray,
+        sort_by: sortBy || undefined,
+      });
       books = res.books;
       error = "";
     } catch (err) {
       console.error("Load books failed", err);
     }
+  }
+
+  // 加载标签
+  async function loadTags() {
+    try {
+      tags = await getTags();
+    } catch (err) {
+      console.error("Load tags failed", err);
+    }
+  }
+
+  // 筛选后的书籍 (前端二次过滤无需，因为后端已处理)
+  let displayedBooks = $derived(() => {
+    let result = [...books];
+    
+    // 前端排序（用于即时响应，后端排序作为默认）
+    if (sortBy) {
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      switch (sortBy) {
+        case 'title_asc':
+          result.sort((a, b) => collator.compare(a.title, b.title));
+          break;
+        case 'title_desc':
+          result.sort((a, b) => collator.compare(b.title, a.title));
+          break;
+        case 'created_asc':
+          result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+          break;
+        case 'created_desc':
+          result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          break;
+        case 'duration_asc':
+          result.sort((a, b) => (a.total_duration || 0) - (b.total_duration || 0));
+          break;
+        case 'duration_desc':
+          result.sort((a, b) => (b.total_duration || 0) - (a.total_duration || 0));
+          break;
+      }
+    }
+    return result;
+  });
+
+  // 标签筛选
+  function toggleTagFilter(tagId: string) {
+    const newSet = new Set(selectedTagIds);
+    if (newSet.has(tagId)) {
+      newSet.delete(tagId);
+    } else {
+      newSet.add(tagId);
+    }
+    selectedTagIds = newSet;
+    loadBooks();
+  }
+
+  function clearTagFilter() {
+    selectedTagIds = new Set();
+    loadBooks();
+  }
+
+  // 过滤后的标签（搜索）
+  let filteredTags = $derived(
+    tagSearchQuery
+      ? tags.filter(t => t.name.toLowerCase().includes(tagSearchQuery.toLowerCase()))
+      : tags
+  );
+
+  // 排序变更
+  function handleSortChange(newSort: string) {
+    sortBy = sortBy === newSort ? "" : newSort;
+    loadBooks();
+  }
+
+  // 创建标签
+  async function handleCreateTag() {
+    const name = newTagName.trim();
+    if (!name) return;
+    try {
+      await createTag(name);
+      newTagName = "";
+      showTagInput = false;
+      await loadTags();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "创建标签失败");
+    }
+  }
+
+  // 编辑标签名
+  function startEditTag(tag: Tag) {
+    editingTagId = tag.id;
+    editingTagName = tag.name;
+  }
+
+  async function saveEditTag() {
+    if (!editingTagId || !editingTagName.trim()) return;
+    try {
+      await updateTag(editingTagId, editingTagName.trim());
+      editingTagId = "";
+      editingTagName = "";
+      await Promise.all([loadTags(), loadBooks()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "修改标签失败");
+    }
+  }
+
+  function cancelEditTag() {
+    editingTagId = "";
+    editingTagName = "";
+  }
+
+  // 删除标签
+  async function handleDeleteTag(tagId: string) {
+    if (!confirm("确定要删除此标签吗？Delete this tag?")) return;
+    try {
+      await deleteTag(tagId);
+      selectedTagIds.delete(tagId);
+      selectedTagIds = new Set(selectedTagIds);
+      await Promise.all([loadTags(), loadBooks()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "删除标签失败");
+    }
+  }
+
+  // 打开编辑书籍标签对话框
+  function openTagEditDialog(book: Book) {
+    tagEditBookId = book.id;
+    tagEditBookTitle = book.title;
+    tagEditSelectedIds = new Set((book.tags || []).map(t => t.id));
+    tagEditNewName = "";
+    showTagEditDialog = true;
+  }
+
+  // 在标签编辑对话框中切换标签
+  function toggleBookTag(tagId: string) {
+    const newSet = new Set(tagEditSelectedIds);
+    if (newSet.has(tagId)) {
+      newSet.delete(tagId);
+    } else {
+      newSet.add(tagId);
+    }
+    tagEditSelectedIds = newSet;
+  }
+
+  // 在标签编辑对话框中创建新标签
+  async function handleCreateTagInDialog() {
+    const name = tagEditNewName.trim();
+    if (!name) return;
+    try {
+      const newTag = await createTag(name);
+      tagEditNewName = "";
+      await loadTags();
+      // 自动勾选新创建的标签
+      const newSet = new Set(tagEditSelectedIds);
+      newSet.add(newTag.id);
+      tagEditSelectedIds = newSet;
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "创建标签失败");
+    }
+  }
+
+  // 保存书籍标签
+  async function saveBookTags() {
+    try {
+      await updateBookTags(tagEditBookId, [...tagEditSelectedIds]);
+      showTagEditDialog = false;
+      await Promise.all([loadBooks(), loadTags()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "保存标签失败");
+    }
+  }
+
+  // 侧边栏拖拽调整宽度
+  function startResize(e: MouseEvent) {
+    isResizing = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    function onMouseMove(e: MouseEvent) {
+      const diff = e.clientX - startX;
+      sidebarWidth = Math.max(160, Math.min(500, startWidth + diff));
+    }
+
+    function onMouseUp() {
+      isResizing = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  // PlayAllVisibleBooks
+  function handlePlayAll() {
+    const visibleBooks = displayedBooks();
+    if (visibleBooks.length === 0) {
+      alert("没有可播放的书籍 No books to play");
+      return;
+    }
+    const ids = visibleBooks.map(b => b.id);
+    const firstId = ids[0];
+    goto(`/reader/${firstId}?playlist=${ids.join(',')}`);
   }
 
   // 点击书籍
@@ -275,7 +510,7 @@
     changePasswordError = "";
 
     try {
-      await changePassword(newPassword, emailCode); // [MODIFY] 传递验证码
+      await changePassword(newPassword, emailCode);
       alert("密码修改成功！Password changed successfully!");
       showPasswordDialog = false;
     } catch (err) {
@@ -316,8 +551,25 @@
   <header
     class="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-200 z-10 safe-area-top"
   >
-    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">我的书架 Bookshelf</h1>
+    <div class="max-w-full mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl font-bold text-gray-900">我的书架 Bookshelf</h1>
+
+        {#if authStore.isLoggedIn && displayedBooks().length > 0}
+          <!-- PlayAllVisibleBooks 按钮 -->
+          <button
+            onclick={handlePlayAll}
+            class="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-medium rounded-lg hover:from-emerald-600 hover:to-teal-700 transition-all shadow-sm hover:shadow-md"
+            title="按顺序播放当前显示的所有书籍 Play all visible books in order"
+          >
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <span class="hidden sm:inline">播放全部 PlayAll</span>
+            <span class="text-xs opacity-80">({displayedBooks().length})</span>
+          </button>
+        {/if}
+      </div>
 
       <div class="flex items-center gap-3">
         {#if authStore.isLoggedIn}
@@ -413,10 +665,10 @@
     </div>
   </header>
 
-  <!-- 书籍网格 -->
-  <main class="max-w-6xl mx-auto px-4 py-6">
+  <!-- 主内容区域 -->
+  <main class="flex" style="min-height: calc(100vh - 73px);">
     {#if isLoading}
-      <div class="flex items-center justify-center py-20">
+      <div class="flex-1 flex items-center justify-center py-20">
         <svg
           class="animate-spin w-8 h-8 text-blue-500"
           fill="none"
@@ -438,68 +690,414 @@
         </svg>
       </div>
     {:else if error}
-      <div class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600">
-        {error}
+      <div class="flex-1 p-4">
+        <div class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600">
+          {error}
+        </div>
       </div>
     {:else if authStore.isLoggedIn}
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- 已登录用户的书籍 -->
-        {#each books as book, i}
-          <div
-            class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
+      <!-- 左侧标签侧边栏 -->
+      <aside
+        class="sidebar bg-white border-r border-gray-200 flex-shrink-0 overflow-hidden flex flex-col"
+        style="width: {sidebarCollapsed ? 40 : sidebarWidth}px;"
+      >
+        {#if sidebarCollapsed}
+          <button
+            class="p-2 m-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            onclick={() => sidebarCollapsed = false}
+            title="展开侧边栏 Expand"
           >
-            <!-- 封面 -->
-            <div
-              onclick={(e) => handleBookClick(book, e)}
-              class="block relative cursor-pointer"
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        {:else}
+          <!-- 侧边栏标题 -->
+          <div class="px-3 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              标签 Tags
+            </h2>
+            <button
+              class="p-1 text-gray-400 hover:text-gray-600 rounded"
+              onclick={() => sidebarCollapsed = true}
+              title="收起 Collapse"
             >
-              <div
-                class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
-                style="background-image: {getBookCover(book, i)}"
-              >
-                <!-- 处理状态标识 -->
-                {#if book.processing_status === "processing"}
-                  <div
-                    class="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded-full font-medium shadow-lg animate-pulse"
-                  >
-                    ⏳ 生成中...
-                  </div>
-                {:else if book.processing_status === "failed"}
-                  <div
-                    class="absolute top-2 left-2 px-2 py-1 bg-red-500 text-white text-xs rounded-full font-medium shadow-lg"
-                  >
-                    ❌ 生成失败
-                  </div>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- 搜索标签 -->
+          <div class="px-3 py-2">
+            <input
+              type="text"
+              bind:value={tagSearchQuery}
+              placeholder="搜索标签 Search tags..."
+              class="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-gray-50"
+            />
+          </div>
+
+          <!-- 标签列表 -->
+          <div class="flex-1 overflow-y-auto px-2 py-1">
+            <!-- 全部 -->
+            <button
+              class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors {selectedTagIds.size === 0 ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}"
+              onclick={clearTagFilter}
+            >
+              <span class="w-4 h-4 flex items-center justify-center">
+                {#if selectedTagIds.size === 0}
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  </svg>
                 {/if}
-                <div class="w-full">
-                  <h2
-                    class="text-xl font-bold text-white drop-shadow-lg line-clamp-2"
+              </span>
+              全部 All
+              <span class="ml-auto text-xs text-gray-400">{books.length}</span>
+            </button>
+
+            {#each filteredTags as tag}
+              <div class="group flex items-center gap-1">
+                {#if editingTagId === tag.id}
+                  <div class="flex-1 flex items-center gap-1 py-1 px-2">
+                    <input
+                      type="text"
+                      bind:value={editingTagName}
+                      class="flex-1 min-w-0 px-1.5 py-0.5 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-400"
+                      onkeydown={(e) => { if (e.key === 'Enter') saveEditTag(); if (e.key === 'Escape') cancelEditTag(); }}
+                    />
+                    <button onclick={saveEditTag} class="text-blue-500 hover:text-blue-700 p-0.5" title="保存">✓</button>
+                    <button onclick={cancelEditTag} class="text-gray-400 hover:text-gray-600 p-0.5" title="取消">✕</button>
+                  </div>
+                {:else}
+                  <button
+                    class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors {selectedTagIds.has(tag.id) ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}"
+                    onclick={() => toggleTagFilter(tag.id)}
                   >
-                    {book.title}
-                  </h2>
-                  {#if book.author}
-                    <p class="text-white/80 text-sm mt-1">{book.author}</p>
+                    <span class="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                      {#if selectedTagIds.has(tag.id)}
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                      {/if}
+                    </span>
+                    <span class="truncate">{tag.name}</span>
+                    <span class="ml-auto text-xs text-gray-400 flex-shrink-0">{tag.book_count}</span>
+                  </button>
+                  <!-- 编辑/删除（仅自己的标签） -->
+                  {#if tag.owner_id === authStore.user?.id}
+                    <div class="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+                      <button
+                        onclick={() => startEditTag(tag)}
+                        class="p-0.5 text-gray-300 hover:text-amber-500 rounded"
+                        title="修改 Edit"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button
+                        onclick={() => handleDeleteTag(tag.id)}
+                        class="p-0.5 text-gray-300 hover:text-red-500 rounded"
+                        title="删除 Delete"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   {/if}
+                {/if}
+              </div>
+            {/each}
+          </div>
+
+          <!-- 新建标签 -->
+          <div class="px-3 py-2 border-t border-gray-100">
+            {#if showTagInput}
+              <div class="flex gap-1">
+                <input
+                  type="text"
+                  bind:value={newTagName}
+                  placeholder="标签名 Tag name"
+                  class="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-400"
+                  onkeydown={(e) => { if (e.key === 'Enter') handleCreateTag(); if (e.key === 'Escape') { showTagInput = false; newTagName = ''; } }}
+                />
+                <button
+                  onclick={handleCreateTag}
+                  class="px-2 py-1 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600"
+                >
+                  添加
+                </button>
+              </div>
+            {:else}
+              <button
+                onclick={() => showTagInput = true}
+                class="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                新建标签 New Tag
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </aside>
+
+      <!-- 拖拽把手 -->
+      {#if !sidebarCollapsed}
+        <div
+          class="resize-handle"
+          onmousedown={startResize}
+          role="separator"
+          aria-label="Resize sidebar"
+          tabindex="-1"
+        ></div>
+      {/if}
+
+      <!-- 右侧书籍区域 -->
+      <div class="flex-1 overflow-auto">
+        <!-- 排序控制栏 -->
+        <div class="sticky top-0 bg-gray-50/90 backdrop-blur-sm border-b border-gray-100 px-4 py-2 flex items-center gap-2 z-[5] flex-wrap">
+          <span class="text-xs text-gray-500 mr-1">排序 Sort:</span>
+          {#each [
+            { key: 'title_asc', label: '名称↑ A-Z' },
+            { key: 'title_desc', label: '名称↓ Z-A' },
+            { key: 'created_desc', label: '最新 Newest' },
+            { key: 'created_asc', label: '最早 Oldest' },
+            { key: 'duration_desc', label: '最长 Longest' },
+            { key: 'duration_asc', label: '最短 Shortest' },
+          ] as opt}
+            <button
+              class="px-2 py-1 text-xs rounded-md transition-colors {sortBy === opt.key ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}"
+              onclick={() => handleSortChange(opt.key)}
+            >
+              {opt.label}
+            </button>
+          {/each}
+        </div>
+
+        <!-- 书籍网格 -->
+        <div class="px-4 py-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {#each displayedBooks() as book, i}
+              <div
+                class="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100"
+              >
+                <!-- 封面 -->
+                <div
+                  onclick={(e) => handleBookClick(book, e)}
+                  class="block relative cursor-pointer"
+                >
+                  <div
+                    class="aspect-[4/3] flex items-end p-4 bg-cover bg-center"
+                    style="background-image: {getBookCover(book, i)}"
+                  >
+                    <!-- 处理状态标识 -->
+                    {#if book.processing_status === "processing"}
+                      <div
+                        class="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded-full font-medium shadow-lg animate-pulse"
+                      >
+                        ⏳ 生成中...
+                      </div>
+                    {:else if book.processing_status === "failed"}
+                      <div
+                        class="absolute top-2 left-2 px-2 py-1 bg-red-500 text-white text-xs rounded-full font-medium shadow-lg"
+                      >
+                        ❌ 生成失败
+                      </div>
+                    {/if}
+                    <div class="w-full">
+                      <h2
+                        class="text-xl font-bold text-white drop-shadow-lg line-clamp-2"
+                      >
+                        {book.title}
+                      </h2>
+                      {#if book.author}
+                        <p class="text-white/80 text-sm mt-1">{book.author}</p>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 信息和操作 -->
+                <div class="p-4">
+                  <!-- 标签 chips -->
+                  {#if book.tags && book.tags.length > 0}
+                    <div class="flex flex-wrap gap-1 mb-2">
+                      {#each book.tags as tag}
+                        <span class="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                          {tag.name}
+                        </span>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <p class="text-gray-500 text-sm line-clamp-2">
+                    {book.description || "暂无简介 No Description"}
+                  </p>
+
+                  <!-- 操作按钮 -->
+                  <div class="mt-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <button
+                        onclick={(e) => handleBookClick(book, e)}
+                        class="flex items-center text-blue-600 text-sm font-medium hover:text-blue-700 transition-colors"
+                      >
+                        <span>开始阅读 Read</span>
+                        <svg
+                          class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      </button>
+                      <!-- 非自己的书显示来源标签 -->
+                      {#if book.owner_id !== authStore.user?.id}
+                        <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                          {book.is_public ? '公开 Public' : '分享 Shared'}
+                        </span>
+                      {/if}
+                    </div>
+
+                    <!-- 修改书名、编辑标签、分享、删除：仅对自己的书显示 -->
+                    {#if book.owner_id === authStore.user?.id}
+                      <div class="flex items-center gap-1">
+                        <!-- 编辑标签 -->
+                        <button
+                          onclick={() => openTagEditDialog(book)}
+                          class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="编辑标签 Edit Tags"
+                        >
+                          <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                          </svg>
+                        </button>
+                        <!-- 修改书名 -->
+                        <button
+                          onclick={() => openEditTitleDialog(book)}
+                          class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="修改书名 Edit Title"
+                        >
+                          <svg
+                            class="w-4.5 h-4.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                            />
+                          </svg>
+                        </button>
+                        <!-- 分享按钮 -->
+                        <button
+                          onclick={() => openShareDialog(book.id)}
+                          class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="分享 Share"
+                        >
+                          <svg
+                            class="w-4.5 h-4.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                            />
+                          </svg>
+                        </button>
+
+                        <!-- 删除按钮 -->
+                        <button
+                          onclick={() => handleDelete(book.id)}
+                          class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="删除 Delete"
+                        >
+                          <svg
+                            class="w-4.5 h-4.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <!-- 信息和操作 -->
-            <div class="p-4">
-              <p class="text-gray-500 text-sm line-clamp-2">
-                {book.description || "暂无简介 No Description"}
-              </p>
-
-              <!-- 操作按钮 -->
-              <div class="mt-3 flex items-center justify-between">
-                <div class="flex items-center gap-2">
+            {:else}
+              <!-- 空状态 -->
+              <div class="col-span-full text-center py-16">
+                <svg
+                  class="w-16 h-16 text-gray-300 mx-auto mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                  />
+                </svg>
+                {#if selectedTagIds.size > 0}
+                  <h3 class="text-lg font-medium text-gray-900">
+                    没有匹配的书籍 No matching books
+                  </h3>
+                  <p class="text-gray-500 mt-1">
+                    尝试选择其他标签 Try other tags
+                  </p>
                   <button
-                    onclick={(e) => handleBookClick(book, e)}
-                    class="flex items-center text-blue-600 text-sm font-medium hover:text-blue-700 transition-colors"
+                    onclick={clearTagFilter}
+                    class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
                   >
-                    <span>开始阅读 Read</span>
+                    清除筛选 Clear Filter
+                  </button>
+                {:else}
+                  <h3 class="text-lg font-medium text-gray-900">
+                    还没有书籍 No Books
+                  </h3>
+                  <p class="text-gray-500 mt-1">
+                    上传你的第一本书开始阅读吧 Upload your first book
+                  </p>
+                  <a
+                    href="/upload"
+                    class="inline-flex items-center gap-2 mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
+                  >
                     <svg
-                      class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform"
+                      class="w-5 h-5"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -508,135 +1106,21 @@
                         stroke-linecap="round"
                         stroke-linejoin="round"
                         stroke-width="2"
-                        d="M9 5l7 7-7 7"
+                        d="M12 4v16m8-8H4"
                       />
                     </svg>
-                  </button>
-                  <!-- 非自己的书显示来源标签 -->
-                  {#if book.owner_id !== authStore.user?.id}
-                    <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {book.is_public ? '公开 Public' : '分享 Shared'}
-                    </span>
-                  {/if}
-                </div>
-
-                <!-- 修改书名、分享、删除：仅对自己的书显示 -->
-                {#if book.owner_id === authStore.user?.id}
-                  <div class="flex items-center gap-2">
-                    <!-- 修改书名 -->
-                    <button
-                      onclick={() => openEditTitleDialog(book)}
-                      class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 dark:hover:text-amber-400 rounded-lg transition-colors"
-                      title="修改书名 Edit Title"
-                    >
-                      <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                        />
-                      </svg>
-                    </button>
-                    <!-- 分享按钮 -->
-                    <button
-                      onclick={() => openShareDialog(book.id)}
-                      class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 rounded-lg transition-colors"
-                      title="分享 Share"
-                    >
-                      <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                        />
-                      </svg>
-                    </button>
-
-                    <!-- 删除按钮 -->
-                    <button
-                      onclick={() => handleDelete(book.id)}
-                      class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="删除 Delete"
-                    >
-                      <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+                    上传书籍 Upload Book
+                  </a>
                 {/if}
               </div>
-            </div>
+            {/each}
           </div>
-        {:else}
-          <!-- 空状态 -->
-          <div class="col-span-full text-center py-16">
-            <svg
-              class="w-16 h-16 text-gray-300 mx-auto mb-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-              />
-            </svg>
-            <h3 class="text-lg font-medium text-gray-900">
-              还没有书籍 No Books
-            </h3>
-            <p class="text-gray-500 mt-1">
-              上传你的第一本书开始阅读吧 Upload your first book
-            </p>
-            <a
-              href="/upload"
-              class="inline-flex items-center gap-2 mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
-            >
-              <svg
-                class="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              上传书籍 Upload Book
-            </a>
-          </div>
-        {/each}
+        </div>
       </div>
     {:else}
       <!-- 未登录显示 Landing Page -->
-      <div class="py-16 text-center">
-        <div class="max-w-3xl mx-auto">
+      <div class="flex-1 py-16 text-center">
+        <div class="max-w-3xl mx-auto px-4">
           <h2
             class="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 mb-6"
           >
@@ -750,6 +1234,75 @@
   </main>
 </div>
 
+<!-- 编辑书籍标签对话框 -->
+{#if showTagEditDialog}
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+  >
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+      <h3 class="text-xl font-bold text-gray-900 mb-1">
+        编辑标签 Edit Tags
+      </h3>
+      <p class="text-sm text-gray-500 mb-4 truncate">
+        {tagEditBookTitle}
+      </p>
+
+      <!-- 标签列表 (多选) -->
+      <div class="max-h-60 overflow-y-auto border border-gray-100 rounded-xl p-2 mb-3 space-y-1">
+        {#each tags.filter(t => t.owner_id === authStore.user?.id) as tag}
+          <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer text-sm">
+            <input
+              type="checkbox"
+              checked={tagEditSelectedIds.has(tag.id)}
+              onchange={() => toggleBookTag(tag.id)}
+              class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+            />
+            <span>{tag.name}</span>
+            <span class="text-xs text-gray-400 ml-auto">{tag.book_count}</span>
+          </label>
+        {:else}
+          <p class="text-sm text-gray-400 px-2 py-3 text-center">
+            暂无标签，请先创建 No tags yet
+          </p>
+        {/each}
+      </div>
+
+      <!-- 快速创建新标签 -->
+      <div class="flex gap-2 mb-4">
+        <input
+          type="text"
+          bind:value={tagEditNewName}
+          placeholder="新标签名 New tag name"
+          class="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+          onkeydown={(e) => { if (e.key === 'Enter') handleCreateTagInDialog(); }}
+        />
+        <button
+          onclick={handleCreateTagInDialog}
+          disabled={!tagEditNewName.trim()}
+          class="px-3 py-2 bg-blue-500 text-white text-sm rounded-xl hover:bg-blue-600 disabled:opacity-50 transition-colors"
+        >
+          创建 Create
+        </button>
+      </div>
+
+      <div class="flex gap-3">
+        <button
+          onclick={() => showTagEditDialog = false}
+          class="flex-1 py-2.5 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
+        >
+          取消 Cancel
+        </button>
+        <button
+          onclick={saveBookTags}
+          class="flex-1 py-2.5 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 transition-colors"
+        >
+          保存 Save
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- 分享对话框 -->
 {#if showShareDialog}
   <div
@@ -862,7 +1415,7 @@
 
       <button
         onclick={() => (showShareDialog = false)}
-        class="w-full mt-4 py-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+        class="w-full mt-4 py-2 text-gray-500 hover:text-gray-700"
       >
         取消 Cancel
       </button>
@@ -875,15 +1428,15 @@
   <div
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
   >
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6">
-      <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+      <h3 class="text-xl font-bold text-gray-900 mb-4">
         修改书名 Edit Title
       </h3>
       <input
         type="text"
         bind:value={editTitleValue}
         placeholder="书名 Book title"
-        class="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+        class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
       />
       {#if editTitleError}
         <p class="text-red-500 text-sm mb-3">{editTitleError}</p>
@@ -891,7 +1444,7 @@
       <div class="flex gap-3">
         <button
           onclick={() => (showEditTitleDialog = false)}
-          class="flex-1 py-2.5 text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          class="flex-1 py-2.5 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
         >
           取消 Cancel
         </button>
@@ -1003,5 +1556,22 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .sidebar {
+    transition: width 0.2s ease;
+  }
+
+  .resize-handle {
+    width: 4px;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+
+  .resize-handle:hover,
+  .resize-handle:active {
+    background: #3b82f6;
   }
 </style>

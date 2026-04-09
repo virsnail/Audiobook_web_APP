@@ -12,10 +12,15 @@ import { authStore } from '$lib/stores/auth.svelte.ts';
 interface LoadParams {
   params: { bookId: string };
   fetch: typeof globalThis.fetch;
+  url: URL;
 }
 
-export const load = async ({ params, fetch }: LoadParams) => {
+export const load = async ({ params, fetch, url }: LoadParams) => {
   const { bookId } = params;
+  
+  // 解析播放列表参数
+  const playlistParam = url.searchParams.get('playlist');
+  const playlistBookIds = playlistParam ? playlistParam.split(',').filter(id => id.trim()) : [];
   
   // 开发模式：使用本地示例数据
   const isDev = import.meta.env.DEV;
@@ -115,6 +120,7 @@ export const load = async ({ params, fetch }: LoadParams) => {
       bookTitle,
       processingStatus: 'ready', 
       processingError: '',
+      playlistBookIds,
     };
   } catch (error) {
     console.error('加载书籍数据失败:', error);
