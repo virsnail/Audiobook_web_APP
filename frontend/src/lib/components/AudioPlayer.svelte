@@ -611,7 +611,7 @@
           />
           <!-- Simple target -->
         </svg>
-        <span class="text-xs">跳到朗读处 Locate</span>
+        <span class="locate-label text-xs">跳到朗读处 Locate</span>
       </button>
 
       <button
@@ -994,6 +994,22 @@
     .speed-btn {
       padding: 5px 10px;
       font-size: 12px;
+    }
+
+    /* 手机上隐藏「自动滚动」文字，僅保留开关图标 */
+    .auto-scroll-label {
+      display: none;
+    }
+
+    /* 手机上「跟到朗读处」按钮仅显示图标 */
+    .locate-label {
+      display: none;
+    }
+
+    /* 跟到朗读处按钮手机上紧凑内边距 */
+    .speed-container .speed-btn:first-child {
+      padding-left: 8px;
+      padding-right: 8px;
     }
   }
   /* 暗色模式支持 */
