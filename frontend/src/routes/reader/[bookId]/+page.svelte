@@ -100,8 +100,20 @@
   let audioPlayerRef: any;
 
   // onMount
-  onMount(() => {
+  onMount(async () => {
     console.log("✅ Reader page mounted");
+
+    // 如果是从「播放全部」进入的（playlist 参数存在），自动开始播放
+    const ids = data?.playlistBookIds;
+    if (ids && ids.length > 0) {
+      console.log("🎵 PlayAll mode detected – will auto-play after audio loads");
+      // 等待 AudioPlayer 挂载和音频 src 就绪
+      await tick();
+      // 再延迟一小段，确保 <audio> 元素可用
+      setTimeout(() => {
+        audioPlayerRef?.loadAndPlay(0);
+      }, 600);
+    }
   });
 
   // 处理音频时间更新
