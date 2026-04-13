@@ -1620,7 +1620,10 @@ async def delete_book(
     
     # 按书籍 ID 删除该书下所有用户的书签（显式级联，不依赖 DB 外键）
     await db.execute(delete(Bookmark).where(Bookmark.book_id == book_id))
-    
+
+    # 显式删除书籍的所有标签关联（book_tags），避免 ORM backref 引起外键冲突
+    await db.execute(delete(BookTag).where(BookTag.book_id == book_id))
+
     # 删除数据库记录（包括级联删除相关的 shares 和 reading_progress）
     await db.delete(book)
     await db.commit()
