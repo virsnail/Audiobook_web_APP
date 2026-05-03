@@ -40,7 +40,7 @@
   let editingTagName = $state("");
 
   // 排序
-  let sortBy = $state("");
+  let sortBy = $state("newest");
 
   // 侧边栏
   let sidebarWidth = $state(240);
@@ -108,6 +108,12 @@
     isLoading = true;
     try {
       if (authStore.isLoggedIn) {
+        // 读取当前用户的本地排序设置
+        const savedSort = localStorage.getItem(`bookshelf_sort_${authStore.user?.id}`);
+        if (savedSort) {
+          sortBy = savedSort;
+        }
+        
         await Promise.all([loadBooks(), loadTags()]);
       }
     } catch (e) {
@@ -198,7 +204,14 @@
 
   // 排序变更
   function handleSortChange(newSort: string) {
-    sortBy = sortBy === newSort ? "" : newSort;
+    // 再次点击时，不设置为空，而是重置为最新的默认状态
+    sortBy = sortBy === newSort ? "newest" : newSort;
+    
+    // 记住该用户的选择
+    if (authStore.isLoggedIn && authStore.user?.id) {
+      localStorage.setItem(`bookshelf_sort_${authStore.user.id}`, sortBy);
+    }
+    
     loadBooks();
   }
 
