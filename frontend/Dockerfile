@@ -12,8 +12,10 @@ COPY package.json pnpm-lock.yaml ./
 # 设置 CI 环境变量以避免 pnpm 交互式检查
 ENV CI=true
 
-# 安装依赖
-RUN pnpm install --frozen-lockfile
+# 安装依赖 (允许执行生命周期脚本，如 esbuild)
+# RUN pnpm config set ignore-scripts false && pnpm install --frozen-lockfile
+# RUN pnpm config set unsafe-perm true && pnpm install --frozen-lockfile
+RUN pnpm approve-builds && pnpm install --frozen-lockfile
 
 # 复制源代码
 COPY . .
