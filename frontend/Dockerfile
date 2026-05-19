@@ -6,8 +6,8 @@ WORKDIR /app
 # 安装 pnpm
 RUN npm install -g pnpm
 
-# 复制依赖文件
-COPY package.json pnpm-lock.yaml ./
+# 复制依赖文件 (pnpm-workspace.yaml 告诉 pnpm v11 允许 esbuild 构建脚本)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # 设置 CI 环境变量以避免 pnpm 交互式检查
 ENV CI=true
