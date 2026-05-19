@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     
     # 媒体
     MEDIA_PATH: str = "/app/media"
-    MAX_UPLOAD_SIZE: int = 500 * 1024 * 1024  # 500MB
+    MAX_UPLOAD_SIZE: int = 1517 * 1024 * 1024  # 1517MB
     ALLOWED_AUDIO_TYPES: List[str] = ["audio/mpeg", "audio/wav", "audio/ogg"]
     
     # 邮件

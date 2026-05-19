@@ -138,6 +138,7 @@ For detailed status on deploying to a cloud server with Nginx and SSL, please re
 
     ```bash
     docker compose up -d --build
+    docker compose up -d --build frontend backend
     ```
 
 4.  **Access the App / 访问应用**:
