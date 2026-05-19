@@ -12,8 +12,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # 设置 CI 环境变量以避免 pnpm 交互式检查
 ENV CI=true
 
-# 安装依赖
-RUN pnpm install --frozen-lockfile
+# 安装依赖 (不加 --frozen-lockfile 以读取 pnpm-workspace.yaml 的 onlyBuiltDependencies 配置)
+RUN pnpm install --prefer-frozen-lockfile
 
 
 # 复制源代码
