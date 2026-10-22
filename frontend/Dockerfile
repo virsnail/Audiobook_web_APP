@@ -4,7 +4,7 @@ FROM node:22-slim AS builder
 WORKDIR /app
 
 # 安装 pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11
 
 # 复制依赖文件 (pnpm-workspace.yaml 告诉 pnpm v11 允许 esbuild 构建脚本)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
