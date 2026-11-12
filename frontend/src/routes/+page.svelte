@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import {
     getBooks,
@@ -347,13 +348,13 @@
     }
     const ids = visibleBooks.map(b => b.id);
     const firstId = ids[0];
-    goto(`/reader/${firstId}?playlist=${ids.join(',')}`);
+    goto(`${resolve('/reader/[bookId]', { bookId: String(firstId) })}?playlist=${ids.join(',')}`);
   }
 
   // 点击书籍
   function handleBookClick(book: Book, e: MouseEvent) {
     if ((e.target as HTMLElement).closest("button")) return;
-    goto(`/reader/${book.id}`);
+    goto(resolve('/reader/[bookId]', { bookId: String(book.id) }));
   }
 
   // 获取封面
@@ -551,7 +552,7 @@
       console.error("Logout API failed", e);
     } finally {
       authStore.logout();
-      goto("/login");
+      goto(resolve('/login'));
     }
   }
 </script>
@@ -593,7 +594,7 @@
         {#if authStore.isLoggedIn}
           <!-- 上传按钮 -->
           <a
-            href="/upload"
+            href={resolve('/upload')}
             onclick={() => logActivity("NAVIGATE_UPLOAD")}
             class="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
           >
@@ -667,13 +668,13 @@
           </div>
         {:else}
           <a
-            href="/login"
+            href={resolve('/login')}
             class="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
           >
             登录 Login
           </a>
           <a
-            href="/register"
+            href={resolve('/register')}
             class="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
           >
             注册 Register
@@ -1087,7 +1088,7 @@
                     上传你的第一本书开始阅读吧 Upload your first book
                   </p>
                   <a
-                    href="/upload"
+                    href={resolve('/upload')}
                     class="inline-flex items-center gap-2 mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
                   >
                     <svg
@@ -1129,13 +1130,13 @@
             class="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
             <a
-              href="/login"
+              href={resolve('/login')}
               class="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
             >
               立即登录 Login Now
             </a>
             <a
-              href="/register"
+              href={resolve('/register')}
               class="w-full sm:w-auto px-8 py-3.5 bg-white text-gray-700 font-medium rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
             >
               注册账号 Register Account

@@ -11,6 +11,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import AudioPlayer from "$lib/components/AudioPlayer.svelte";
   import PlaylistBar from "$lib/components/PlaylistBar.svelte";
   import TextContent from "$lib/components/TextContent.svelte";
@@ -229,7 +230,7 @@
 
       // 6. 更新 URL
       const playlistParam = playlistStore.bookIds.join(',');
-      const newUrl = `/reader/${bookId}?playlist=${playlistParam}`;
+      const newUrl = `${resolve('/reader/[bookId]', { bookId })}?playlist=${playlistParam}`;
       window.history.replaceState({}, '', newUrl);
 
       // 7. 加载书签
@@ -512,7 +513,7 @@
         </p>
         <div class="flex gap-3 justify-center">
           <a
-            href="/"
+            href={resolve('/')}
             class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
           >
             返回书架 Back
@@ -566,7 +567,7 @@
           If the issue persists, please contact the website administrator.
         </p>
         <a
-          href="/"
+          href={resolve('/')}
           class="inline-block px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
         >
           返回书架 Back to Bookshelf
@@ -584,7 +585,7 @@
     >
       <!-- 返回按钮 -->
       <a
-        href="/"
+        href={resolve('/')}
         class="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-manipulation text-gray-600 dark:text-gray-400"
         title="返回书架 Back to Bookshelf"
       >
@@ -791,7 +792,7 @@
       <!-- 切换到 EPUB 模式按钮 (暂时隐藏 / Temporary hidden) -->
       <!--
     <a
-      href="/epub-reader/{data.bookId}"
+      href={resolve('/epub-reader/[bookId]', { bookId: data.bookId })}
       class="px-3 py-1.5 rounded-lg bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-800 dark:text-green-200 text-sm font-medium transition-colors"
       title="切换到 EPUB 阅读器 Switch to EPUB"
     >

@@ -4,6 +4,8 @@
  * 加载 manifest.json 和第一章内容
  */
 
+import { base } from '$app/paths';
+
 export const ssr = false; // Disable SSR to access authStore
 
 import type { BookManifest } from '$lib/types/chapter';
@@ -24,7 +26,7 @@ export const load = async ({ params, fetch, url }: LoadParams) => {
   
   // 开发模式：使用本地示例数据
   const isDev = import.meta.env.DEV;
-  const basePath = isDev ? '/sample' : `/api/books/${bookId}`;
+  const basePath = isDev ? `${base}/sample` : `/api/books/${bookId}`;
   
   const headers = authStore.getAuthHeader();
 

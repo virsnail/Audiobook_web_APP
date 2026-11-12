@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { onDestroy } from "svelte";
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import { login, getMe, sendEmailCode, forgotPassword } from "$lib/utils/api";
@@ -56,7 +57,7 @@
       const user = await getMe();
       authStore.login(access_token, user);
 
-      goto("/");
+      goto(resolve('/'));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "登录失败";
       error = msg;
@@ -287,7 +288,7 @@
           <p class="text-gray-500 text-sm">
             还没有账户？ No account?
             <a
-              href="/register"
+              href={resolve('/register')}
               class="text-blue-600 hover:text-blue-700 font-medium"
             >
               立即注册 Register Now

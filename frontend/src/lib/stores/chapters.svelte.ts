@@ -7,6 +7,7 @@
  * - 消除按需加载数据的异步等待
  */
 
+import { base } from '$app/paths';
 import { authStore } from '$lib/stores/auth.svelte.ts';
 import type { Chapter, ChapterMeta, BookManifest, Segment, ChapterLoadState } from '$lib/types/chapter';
 
@@ -23,7 +24,7 @@ let currentChapterIndex = $state(0);
 let totalDuration = $state(0);
 
 // 基础 URL
-let baseUrl = $state('/sample');
+let baseUrl = $state(`${base}/sample`);
 
 // 全局 segment 计数器
 let globalSegmentCounter = 0;
@@ -49,7 +50,7 @@ function setChapterData(index: number, updates: Partial<Chapter>): void {
 /**
  * 从 manifest 初始化章节数据
  */
-function initFromManifest(manifest: BookManifest, basePath: string = '/sample') {
+function initFromManifest(manifest: BookManifest, basePath: string = `${base}/sample`) {
   // 防止重复初始化
   if (baseUrl === basePath && chapters.length === manifest.chapters.length) {
     console.log('📚 Store already initialized for', basePath);

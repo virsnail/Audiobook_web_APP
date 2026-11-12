@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from "$app/paths";
   /**
    * EPUB Reader Page (方案2专用)
    *
@@ -175,7 +176,7 @@
       <div class="flex items-center gap-4">
         <!-- 返回按钮 -->
         <a
-          href="/"
+          href={resolve('/')}
           class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           title="返回书架"
         >
@@ -229,7 +230,7 @@
         <!-- EPUB/TXT 切换 -->
         <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
           <a
-            href="/reader/{data.bookId}"
+            href={resolve('/reader/[bookId]', { bookId: data.bookId })}
             class="px-3 py-1 text-sm font-medium rounded text-gray-500 hover:text-gray-700 dark:text-gray-400"
             title="切换到 TXT 模式"
           >

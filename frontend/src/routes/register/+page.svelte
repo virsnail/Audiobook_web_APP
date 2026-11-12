@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import { sendEmailCode, register, getMe } from "$lib/utils/api";
 
@@ -137,7 +138,7 @@
       authStore.login(access_token, user);
 
       // 跳转到首页
-      goto("/");
+      goto(resolve('/'));
     } catch (err) {
       error = err instanceof Error ? err.message : "注册失败";
     } finally {
@@ -437,7 +438,7 @@
         <p class="text-gray-500 text-sm">
           已有账户？ Already have an account?
           <a
-            href="/login"
+            href={resolve('/login')}
             class="text-blue-600 hover:text-blue-700 font-medium"
           >
             立即登录 Login Now

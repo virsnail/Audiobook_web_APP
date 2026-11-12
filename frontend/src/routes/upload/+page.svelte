@@ -3,6 +3,7 @@
 -->
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { authStore } from "$lib/stores/auth.svelte.ts";
   import { uploadBook, uploadTxtBook, logActivity } from "$lib/utils/api";
 
@@ -79,7 +80,7 @@
         if (coverFile) formData.append("cover_file", coverFile);
 
         await uploadBook(formData);
-        goto("/");
+        goto(resolve('/'));
       } catch (err) {
         error = err instanceof Error ? err.message : "上传失败";
       } finally {
@@ -111,7 +112,7 @@
         }
 
         await uploadTxtBook(formData);
-        goto("/");
+        goto(resolve('/'));
       } catch (err) {
         error = err instanceof Error ? err.message : "上传失败/Upload failed";
       } finally {
@@ -138,7 +139,7 @@
   <div class="max-w-2xl mx-auto">
     <!-- 头部 -->
     <div class="flex items-center gap-4 mb-8">
-      <a href="/" class="p-2 hover:bg-white/50 rounded-xl transition-colors">
+      <a href={resolve('/')} class="p-2 hover:bg-white/50 rounded-xl transition-colors">
         <svg
           class="w-6 h-6 text-gray-600"
           fill="none"
