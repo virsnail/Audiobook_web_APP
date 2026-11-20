@@ -13,16 +13,16 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.2.11",
-    "@sveltejs/kit": "^2.50.1",
+    "@sveltejs/kit": "^3.4.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/typography": "^0.5.19",
     "autoprefixer": "^10.4.24",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.33",
     "svelte": "^5.48.2",
     "svelte-check": "^4.3.5",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.7"
   },
   "dependencies": {
     "highlight.js": "^11.11.1",
